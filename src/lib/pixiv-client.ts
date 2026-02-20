@@ -79,9 +79,9 @@ export class PixivClient {
     async searchIllust(word: string, params: any = {}) {
         const defaultParams = {
             word,
-            searchTarget: 'partial_match_for_tags',
+            searchTarget: 'title_and_caption',
             sort: 'popular_desc',
-            filter: 'for_ios',
+            // filter: 'for_ios',
         };
         return this.fetch('/v1/search/illust', {
             params: { ...defaultParams, ...params }
@@ -92,7 +92,7 @@ export class PixivClient {
         const defaultParams = {
             contentType: 'illust',
             includeRankingLabel: 'true',
-            filter: 'for_ios',
+            // filter: 'for_ios',
         };
         return this.fetch('/v1/illust/recommended', {
             params: { ...defaultParams, ...params }
