@@ -65,7 +65,28 @@ npm run build
 
 ## 🔧 获取 Pixiv Refresh Token
 
-可以参考 [pixiv-auth](https://github.com/eggplants/get-pixivpy-token) 等工具获取 Pixiv Refresh Token。
+可以参考 [pixiv-auth](https://github.com/eggplants/get-pixivpy-token) 等工具获取 Pixiv Refresh Token。或使用以下方法：
+
+
+**1. 安装工具**
+确保你已经安装了 Python。在终端中运行以下命令：
+```bash
+pip install gallery-dl
+```
+
+**2. 运行 Pixiv 专属授权命令**
+在终端输入并执行：
+```bash
+gallery-dl oauth:pixiv
+```
+
+**3. 按提示完成操作**
+1. 终端会输出一个很长的 Pixiv 官方登录 URL，并提示你用浏览器打开。
+2. 在浏览器（建议用电脑端 Chrome/Edge）中打开该链接，按下 `F12` 打开开发者工具，切换到 **Network（网络）** 面板。
+3. 正常完成登录和人机验证。
+4. 登录完成后，页面可能会变白或报错（属于正常现象）。在网络面板里找到最后一个名为 `callback?state=...` 的请求。
+5. 复制该请求的 `code` 参数的值（一串很长的字符）。
+6. 将这个 `code` 粘贴回刚才的终端命令行并回车，`gallery-dl` 就会自动为你结算出最新的 Refresh Token。
 
 ## 📁 项目结构
 
