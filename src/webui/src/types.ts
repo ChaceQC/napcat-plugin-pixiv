@@ -19,6 +19,7 @@ export interface PluginConfig {
     cooldownSeconds: number
     pixivRefreshToken?: string
     r18Enabled?: boolean
+    rateLimitPerMinute?: number
     groupConfigs?: Record<string, GroupConfig>
 }
 

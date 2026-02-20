@@ -113,6 +113,13 @@ export default function ConfigPage() {
                         checked={config.r18Enabled || false}
                         onChange={(v) => updateField('r18Enabled', v)}
                     />
+                    <InputRow
+                        label="每分钟频次上限"
+                        desc="所有群共享的全局请求限制，0 表示不限制"
+                        value={String(config.rateLimitPerMinute ?? 60)}
+                        type="number"
+                        onChange={(v) => updateField('rateLimitPerMinute', Number(v) || 0)}
+                    />
                 </div>
             </div>
 

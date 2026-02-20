@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
     groupConfigs: {},
     pixivRefreshToken: '',
     r18Enabled: false,
+    rateLimitPerMinute: 60,
 };
 
 /**

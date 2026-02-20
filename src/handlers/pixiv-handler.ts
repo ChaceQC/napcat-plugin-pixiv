@@ -12,11 +12,40 @@ import { pixivService, SafeIllust } from '../services/pixiv.service';
 import { sendReply, sendForwardMsg, ForwardNode } from './message-handler';
 import { pluginState } from '../core/state';
 
+// ---- 全局频次限制（滑动窗口） ----
+const requestTimestamps: number[] = [];
+
+function isRateLimited(): boolean {
+    const limit = pluginState.config.rateLimitPerMinute ?? 60;
+    if (limit <= 0) return false; // 0 表示不限制
+
+    const now = Date.now();
+    const windowMs = 60_000; // 1 分钟
+
+    // 清理超过窗口的旧记录
+    while (requestTimestamps.length > 0 && requestTimestamps[0] <= now - windowMs) {
+        requestTimestamps.shift();
+    }
+
+    if (requestTimestamps.length >= limit) {
+        return true;
+    }
+
+    requestTimestamps.push(now);
+    return false;
+}
+
 export async function handlePixivCommand(
     ctx: NapCatPluginContext,
     event: OB11Message,
     args: string[]
 ): Promise<void> {
+    // 全局频次限制检查
+    if (isRateLimited()) {
+        await sendReply(ctx, event, '⚠️ 请求过于频繁，请稍后再试。');
+        return;
+    }
+
     const subCommand = args[0] || '';
 
     if (!subCommand) {

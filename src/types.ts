@@ -24,6 +24,8 @@ export interface PluginConfig {
     cooldownSeconds?: number;
     pixivRefreshToken?: string;
     r18Enabled?: boolean;
+    /** 全局每分钟频次限制（所有群共享），0 表示不限制，默认 60 */
+    rateLimitPerMinute?: number;
     /** 按群的单独配置 */
     groupConfigs: Record<string, GroupConfig>;
     // TODO: 在这里添加你的插件配置项
