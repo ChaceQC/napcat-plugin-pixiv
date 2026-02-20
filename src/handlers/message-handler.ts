@@ -15,6 +15,36 @@ import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plu
 import { pluginState } from '../core/state';
 import { handlePixivCommand } from './pixiv-handler';
 
+// ==================== 全局频次限制（滑动窗口） ====================
+
+const requestTimestamps: number[] = [];
+
+/**
+ * 全局频次限制检查
+ * 使用滑动窗口算法，限制每分钟内所有来源（群+私聊）的总请求数
+ * @returns true 表示已达到频次限制
+ */
+function isRateLimited(): boolean {
+    const limit = pluginState.config.rateLimitPerMinute ?? 60;
+    if (limit <= 0) return false; // 0 表示不限制
+
+    const now = Date.now();
+    const windowMs = 60_000; // 1 分钟
+
+    // 清理超过窗口的旧记录
+    while (requestTimestamps.length > 0 && requestTimestamps[0] <= now - windowMs) {
+        requestTimestamps.shift();
+    }
+
+    if (requestTimestamps.length >= limit) {
+        pluginState.logger.debug(`全局频次限制触发: ${requestTimestamps.length}/${limit} 次/分钟`);
+        return true;
+    }
+
+    requestTimestamps.push(now);
+    return false;
+}
+
 // ==================== CD 冷却管理 ====================
 
 /** CD 冷却记录 key: groupId, value: 过期时间戳 */
@@ -218,7 +248,12 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
         const args = rawMessage.slice(prefix.length).trim().split(/\s+/);
         const subCommand = args[0]?.toLowerCase() || '';
 
-        // TODO: 在这里实现你的命令处理逻辑
+        // 全局频次限制检查（所有命令共享，群+私聊）
+        if (isRateLimited()) {
+            await sendReply(ctx, event, '⚠️ 请求过于频繁，请稍后再试。');
+            return;
+        }
+
         switch (subCommand) {
             case 'help': {
                 const helpText = [
