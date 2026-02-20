@@ -13,21 +13,22 @@
 import type { OB11Message, OB11PostSendMsg } from 'napcat-types/napcat-onebot';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { pluginState } from '../core/state';
+import { handlePixivCommand } from './pixiv-handler';
 
 // ==================== CD 冷却管理 ====================
 
-/** CD 冷却记录 key: `${groupId}:${command}`, value: 过期时间戳 */
+/** CD 冷却记录 key: groupId, value: 过期时间戳 */
 const cooldownMap = new Map<string, number>();
 
 /**
- * 检查是否在 CD 中
+ * 检查是否在 CD 中（同群共享冷却）
  * @returns 剩余秒数，0 表示可用
  */
-function getCooldownRemaining(groupId: number | string, command: string): number {
-    const cdSeconds = pluginState.config.cooldownSeconds ?? 60;
+function getCooldownRemaining(groupId: number | string): number {
+    const cdSeconds = Number(pluginState.config.cooldownSeconds) || 0;
     if (cdSeconds <= 0) return 0;
 
-    const key = `${groupId}:${command}`;
+    const key = String(groupId);
     const expireTime = cooldownMap.get(key);
     if (!expireTime) return 0;
 
@@ -36,14 +37,21 @@ function getCooldownRemaining(groupId: number | string, command: string): number
         cooldownMap.delete(key);
         return 0;
     }
+    pluginState.logger.debug(`群 ${groupId} CD 剩余 ${remaining} 秒`);
     return remaining;
 }
 
-/** 设置 CD 冷却 */
-function setCooldown(groupId: number | string, command: string): void {
-    const cdSeconds = pluginState.config.cooldownSeconds ?? 60;
+/** 设置 CD 冷却（同群共享） */
+function setCooldown(groupId: number | string): void {
+    const cdSeconds = Number(pluginState.config.cooldownSeconds) || 0;
     if (cdSeconds <= 0) return;
-    cooldownMap.set(`${groupId}:${command}`, Date.now() + cdSeconds * 1000);
+    cooldownMap.set(String(groupId), Date.now() + cdSeconds * 1000);
+    pluginState.logger.debug(`群 ${groupId} 设置 CD ${cdSeconds} 秒`);
+}
+
+/** 清空所有冷却记录（配置变更时调用） */
+export function clearCooldownMap(): void {
+    cooldownMap.clear();
 }
 
 // ==================== 消息发送工具 ====================
@@ -226,15 +234,31 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
             case 'ping': {
                 // 群消息检查 CD
                 if (messageType === 'group' && groupId) {
-                    const remaining = getCooldownRemaining(groupId, 'ping');
+                    const remaining = getCooldownRemaining(groupId);
                     if (remaining > 0) {
                         await sendReply(ctx, event, `请等待 ${remaining} 秒后再试`);
                         return;
                     }
+                    setCooldown(groupId);
                 }
 
                 await sendReply(ctx, event, 'pong!');
-                if (messageType === 'group' && groupId) setCooldown(groupId, 'ping');
+                pluginState.incrementProcessed();
+                break;
+            }
+
+            case 'p站': {
+                // 群消息检查 CD
+                if (messageType === 'group' && groupId) {
+                    const remaining = getCooldownRemaining(groupId);
+                    if (remaining > 0) {
+                        await sendReply(ctx, event, `请等待 ${remaining} 秒后再试`);
+                        return;
+                    }
+                    setCooldown(groupId);
+                }
+
+                await handlePixivCommand(ctx, event, args.slice(1));
                 pluginState.incrementProcessed();
                 break;
             }
