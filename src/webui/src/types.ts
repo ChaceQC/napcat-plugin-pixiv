@@ -17,8 +17,9 @@ export interface PluginConfig {
     debug: boolean
     commandPrefix: string
     cooldownSeconds: number
+    pixivRefreshToken?: string
+    r18Enabled?: boolean
     groupConfigs?: Record<string, GroupConfig>
-    // TODO: 在这里添加你的插件配置项类型
 }
 
 export interface GroupConfig {

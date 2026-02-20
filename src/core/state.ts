@@ -34,7 +34,14 @@ function sanitizeConfig(raw: unknown): PluginConfig {
     if (typeof raw.enabled === 'boolean') out.enabled = raw.enabled;
     if (typeof raw.debug === 'boolean') out.debug = raw.debug;
     if (typeof raw.commandPrefix === 'string') out.commandPrefix = raw.commandPrefix;
-    if (typeof raw.cooldownSeconds === 'number') out.cooldownSeconds = raw.cooldownSeconds;
+    // cooldownSeconds 可能以字符串形式传入（NapCat 配置面板）
+    if (raw.cooldownSeconds !== undefined && raw.cooldownSeconds !== null) {
+        const n = Number(raw.cooldownSeconds);
+        if (!isNaN(n)) out.cooldownSeconds = n;
+    }
+    if (typeof raw.pixivRefreshToken === 'string') out.pixivRefreshToken = raw.pixivRefreshToken;
+    if (typeof raw.r18Enabled === 'boolean') out.r18Enabled = raw.r18Enabled;
+
 
     // 群配置清洗
     if (isObject(raw.groupConfigs)) {
@@ -228,10 +235,11 @@ class PluginState {
     }
 
     /**
-     * 合并更新配置
-     */
+ * 合并更新配置
+ */
     updateConfig(partial: Partial<PluginConfig>): void {
-        this.config = { ...this.config, ...partial };
+        const merged = { ...this.config, ...partial };
+        this.config = sanitizeConfig(merged);
         this.saveConfig();
     }
 

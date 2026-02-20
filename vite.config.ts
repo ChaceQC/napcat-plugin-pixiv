@@ -55,7 +55,7 @@ function copyAssetsPlugin() {
                     // 先确保 webui 子项目的依赖已安装
                     if (!fs.existsSync(resolve(webuiRoot, 'node_modules'))) {
                         console.log('[copy-assets] (o\'v\'o) 正在安装 WebUI 依赖...');
-                        execSync('pnpm install', {
+                        execSync('npm install', {
                             cwd: webuiRoot,
                             stdio: 'pipe',
                         });
@@ -65,7 +65,7 @@ function copyAssetsPlugin() {
                     console.log('[copy-assets] (o\'v\'o) 正在构建 WebUI...');
                     const webuiEnv = { ...process.env };
                     delete webuiEnv.NODE_ENV;
-                    execSync('pnpm run build', {
+                    execSync('npm run build', {
                         cwd: webuiRoot,
                         stdio: 'pipe',
                         env: webuiEnv,
@@ -82,7 +82,7 @@ function copyAssetsPlugin() {
                     copyDirRecursive(webuiDist, webuiDest);
                     console.log('[copy-assets] (o\'v\'o) 已复制 webui 构建产物');
                 } else {
-                    console.error('[copy-assets] (;_;) webui 构建产物不存在，请先运行 pnpm run build:webui');
+                    console.error('[copy-assets] (;_;) webui 构建产物不存在，请先运行 npm run build:webui');
                 }
 
                 // 3. 生成精简的 package.json（只保留运行时必要字段）
@@ -127,6 +127,7 @@ function copyAssetsPlugin() {
 export default defineConfig({
     resolve: {
         conditions: ['node', 'default'],
+        mainFields: ['module', 'main'],
     },
     build: {
         sourcemap: false,

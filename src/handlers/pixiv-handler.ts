@@ -1,0 +1,148 @@
+/**
+ * Pixiv 命令处理器
+ *
+ * 命令：
+ *   #p站         → 随机推荐 3 张图片（合并转发）
+ *   #p站 关键词  → 搜索并返回 3 张图片（合并转发）
+ */
+
+import { OB11Message } from 'napcat-types/napcat-onebot';
+import { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/types';
+import { pixivService, SafeIllust } from '../services/pixiv.service';
+import { sendReply, sendForwardMsg, ForwardNode } from './message-handler';
+import { pluginState } from '../core/state';
+
+export async function handlePixivCommand(
+    ctx: NapCatPluginContext,
+    event: OB11Message,
+    args: string[]
+): Promise<void> {
+    const subCommand = args[0] || '';
+
+    if (!subCommand) {
+        await handleRandomRecommend(ctx, event);
+        return;
+    }
+
+    const keyword = args.join(' ');
+    await handleSearch(ctx, event, keyword);
+}
+
+/**
+ * 构建包含 3 张图片的合并转发节点
+ * 一个节点内放入 3 张图 + 对应信息
+ */
+async function buildForwardNodes(illusts: SafeIllust[], title: string): Promise<ForwardNode[]> {
+    // 并行下载所有图片
+    const downloadResults = await Promise.allSettled(
+        illusts.map(illust => pixivService.downloadImage(illust.imageUrl))
+    );
+
+    // 构建单个节点的 content：每张图片 + 文字信息交替排列
+    const content: Array<{ type: string; data: Record<string, unknown> }> = [];
+
+    // 在开头添加摘要信息
+    content.push({
+        type: 'text',
+        data: { text: title },
+    });
+
+    for (let i = 0; i < illusts.length; i++) {
+        const result = downloadResults[i];
+        if (result.status !== 'fulfilled') {
+            pluginState.logger.warn(`第 ${i + 1} 张图片下载失败，跳过`);
+            continue;
+        }
+
+        const localPath = result.value;
+        const illust = illusts[i];
+
+        // 添加图片
+        content.push({
+            type: 'image',
+            data: { file: `file://${localPath}` },
+        });
+
+        // 添加文字信息
+        content.push({
+            type: 'text',
+            data: { text: `\n📌 ${illust.title}\n🎨 ${illust.userName}\n🔗 ID: ${illust.id}\n` },
+        });
+    }
+
+    if (content.length === 0) {
+        return [];
+    }
+
+    // 一个合并转发节点包含所有图片
+    const node: ForwardNode = {
+        type: 'node',
+        data: {
+            nickname: 'Pixiv Bot',
+            user_id: pluginState.selfId || '10000',
+            content,
+        },
+    };
+
+    return [node];
+}
+
+async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Message) {
+    try {
+        await sendReply(ctx, event, '🌟 正在获取随机推荐...');
+
+        const illusts = await pixivService.getRandomTop3();
+
+        if (illusts.length === 0) {
+            await sendReply(ctx, event, '未找到推荐内容。');
+            return;
+        }
+
+        const senderName = event.sender?.nickname || event.sender?.card || '未知用户';
+        const nodes = await buildForwardNodes(illusts, `🌟 随机推荐 | 来自 ${senderName}`);
+        if (nodes.length === 0) {
+            await sendReply(ctx, event, '图片下载失败，请稍后重试。');
+            return;
+        }
+
+        const isGroup = event.message_type === 'group';
+        const target = isGroup ? event.group_id! : event.user_id;
+        const ok = await sendForwardMsg(ctx, target, isGroup, nodes);
+        if (!ok) {
+            await sendReply(ctx, event, '⚠️ 合并转发消息发送失败，请稍后重试。');
+        }
+    } catch (error) {
+        pluginState.logger.error('Pixiv 随机推荐错误:', error);
+        await sendReply(ctx, event, `获取推荐失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+}
+
+async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keyword: string) {
+    try {
+        await sendReply(ctx, event, `🔍 正在搜索: ${keyword}...`);
+
+        const illusts = await pixivService.searchTop3(keyword);
+
+        if (illusts.length === 0) {
+            await sendReply(ctx, event, '未找到相关内容。');
+            return;
+        }
+
+        const senderName = event.sender?.nickname || event.sender?.card || '未知用户';
+        const nodes = await buildForwardNodes(illusts, `🔍 搜索: ${keyword} | 来自 ${senderName}`);
+        if (nodes.length === 0) {
+            await sendReply(ctx, event, '图片下载失败，请稍后重试。');
+            return;
+        }
+
+        const isGroup = event.message_type === 'group';
+        const target = isGroup ? event.group_id! : event.user_id;
+        const ok = await sendForwardMsg(ctx, target, isGroup, nodes);
+        if (!ok) {
+            await sendReply(ctx, event, '⚠️ 合并转发消息发送失败，请稍后重试。');
+        }
+    } catch (error) {
+        pluginState.logger.error('Pixiv 搜索错误:', error);
+        await sendReply(ctx, event, `搜索失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+}

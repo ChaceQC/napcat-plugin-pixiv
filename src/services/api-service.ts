@@ -60,6 +60,11 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 return res.status(400).json({ code: -1, message: '请求体为空' });
             }
             pluginState.updateConfig(body as Partial<import('../types').PluginConfig>);
+            // 如果冷却时间被更新，清空冷却记录使其立刻生效
+            if ('cooldownSeconds' in body) {
+                const { clearCooldownMap } = await import('../handlers/message-handler');
+                clearCooldownMap();
+            }
             ctx.logger.info('配置已保存');
             res.json({ code: 0, message: 'ok' });
         } catch (err) {
