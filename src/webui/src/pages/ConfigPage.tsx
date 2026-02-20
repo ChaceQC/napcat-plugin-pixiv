@@ -82,7 +82,7 @@ export default function ConfigPage() {
                     />
                     <InputRow
                         label="冷却时间 (秒)"
-                        desc="同一命令请求冷却时间，0 表示不限制"
+                        desc="同群命令冷却时间，0 表示不限制"
                         value={String(config.cooldownSeconds)}
                         type="number"
                         onChange={(v) => updateField('cooldownSeconds', Number(v) || 0)}

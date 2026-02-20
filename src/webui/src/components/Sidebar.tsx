@@ -21,7 +21,7 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                     <IconPlugin size={18} />
                 </div>
                 <div>
-                    <h1 className="font-bold text-sm leading-tight text-gray-900 dark:text-white">Plugin Template</h1>
+                    <h1 className="font-bold text-sm leading-tight text-gray-900 dark:text-white">Pixiv 图片</h1>
                     <p className="text-[10px] text-gray-400 font-medium tracking-wider">NAPCAT PLUGIN</p>
                 </div>
             </div>
@@ -43,7 +43,7 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
             {/* Footer */}
             <div className="px-3 pb-2">
                 <a
-                    href="https://github.com"
+                    href="https://github.com/ChaceQC/napcat-plugin-pixiv/issues"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="sidebar-item no-underline"
