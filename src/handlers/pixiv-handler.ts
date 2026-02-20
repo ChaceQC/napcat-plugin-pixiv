@@ -8,7 +8,7 @@
 
 import { OB11Message } from 'napcat-types/napcat-onebot';
 import { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/types';
-import { pixivService, SafeIllust } from '../services/pixiv.service';
+import { pixivService, SafeIllust, ExtractResult } from '../services/pixiv.service';
 import { sendReply, sendForwardMsg, ForwardNode } from './message-handler';
 import { pluginState } from '../core/state';
 
@@ -120,15 +120,19 @@ async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Messag
     try {
         await sendReply(ctx, event, '🌟 正在获取随机推荐...');
 
-        const illusts = await pixivService.getRandomTop3();
+        const result = await pixivService.getRandomTop3();
 
-        if (illusts.length === 0) {
-            await sendReply(ctx, event, '未找到推荐内容。');
+        if (result.illusts.length === 0) {
+            if (result.r18Filtered > 0) {
+                await sendReply(ctx, event, `🔞 推荐内容均为限制级内容（已过滤 ${result.r18Filtered} 个），换个时间再试试吧~`);
+            } else {
+                await sendReply(ctx, event, '未找到推荐内容。');
+            }
             return;
         }
 
         const senderName = event.sender?.nickname || event.sender?.card || '未知用户';
-        const nodes = await buildForwardNodes(illusts, `🌟 随机推荐 | 来自 ${senderName}`);
+        const nodes = await buildForwardNodes(result.illusts, `🌟 随机推荐 | 来自 ${senderName}`);
         if (nodes.length === 0) {
             await sendReply(ctx, event, '图片下载失败，请稍后重试。');
             return;
@@ -150,15 +154,19 @@ async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keywor
     try {
         await sendReply(ctx, event, `🔍 正在搜索: ${keyword}...`);
 
-        const illusts = await pixivService.searchTop3(keyword);
+        const result = await pixivService.searchTop3(keyword);
 
-        if (illusts.length === 0) {
-            await sendReply(ctx, event, '未找到相关内容。');
+        if (result.illusts.length === 0) {
+            if (result.r18Filtered > 0) {
+                await sendReply(ctx, event, `🔞 「${keyword}」的搜索结果均为限制级内容（已过滤 ${result.r18Filtered} 个），请尝试其他关键词~`);
+            } else {
+                await sendReply(ctx, event, '未找到相关内容。');
+            }
             return;
         }
 
         const senderName = event.sender?.nickname || event.sender?.card || '未知用户';
-        const nodes = await buildForwardNodes(illusts, `🔍 搜索: ${keyword} | 来自 ${senderName}`);
+        const nodes = await buildForwardNodes(result.illusts, `🔍 搜索: ${keyword} | 来自 ${senderName}`);
         if (nodes.length === 0) {
             await sendReply(ctx, event, '图片下载失败，请稍后重试。');
             return;
