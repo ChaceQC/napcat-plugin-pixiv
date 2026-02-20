@@ -102,11 +102,14 @@ export class PixivClient {
     async fetch(url: string, options: any = {}) {
         try {
             return await this._request(url, options);
-        } catch (error) {
-            // Attempt to refresh token if 401? 
-            // Pixiv OAuth usually expires in 1 hour.
-            // Simplified: Just retry login once if error looks like auth error
-            // checks omitted for brevity, assuming caller handles re-login or init calls login
+        } catch (error: any) {
+            // access_token 过期（Pixiv OAuth 通常 1 小时过期），自动刷新并重试
+            const status = error.response?.status;
+            if ((status === 400 || status === 403 || status === 401) && this.refreshToken) {
+                console.log('[PixivClient] access_token 已过期，正在使用 refresh_token 重新获取...');
+                await this.login(this.refreshToken);
+                return await this._request(url, options);
+            }
             throw error;
         }
     }
