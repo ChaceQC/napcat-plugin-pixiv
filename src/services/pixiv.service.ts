@@ -122,7 +122,11 @@ export class PixivService {
         await this.ensureLoggedIn();
 
         const maxRetries = 3;
-        let lastResult: ExtractResult = { illusts: [], totalScanned: 0, r18Filtered: 0 };
+        const requiredCount = pluginState.config.resultCount ?? 3;
+        // 累积池：按 ID 去重叠加
+        const collectedMap = new Map<number, SafeIllust>();
+        let totalScanned = 0;
+        let totalR18Filtered = 0;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
@@ -135,29 +139,42 @@ export class PixivService {
                 });
 
                 const illusts = result.illusts || [];
-                lastResult = this.extractTopSafe(illusts, true);
+                const currentResult = this.extractTopSafe(illusts, true);
 
-                // 累计统计
-                if (lastResult.illusts.length > 0) {
-                    return lastResult;
+                // 去重叠加到累积池
+                for (const illust of currentResult.illusts) {
+                    if (!collectedMap.has(illust.id)) {
+                        collectedMap.set(illust.id, illust);
+                    }
+                }
+                totalScanned += currentResult.totalScanned;
+                totalR18Filtered += currentResult.r18Filtered;
+
+                // 已满足数量要求，直接返回
+                if (collectedMap.size >= requiredCount) {
+                    const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered };
                 }
 
-                // 如果是因为 R-18 过滤导致为空，尝试重试
-                if (lastResult.r18Filtered > 0) {
-                    pluginState.logger.info(`搜索 "${keyword}" 第 ${attempt + 1} 次结果全被 R-18 过滤（过滤 ${lastResult.r18Filtered} 个），重试中...`);
-                    continue;
+                // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
+                if (currentResult.illusts.length === 0 && currentResult.r18Filtered === 0) {
+                    break;
                 }
 
-                // 不是因为 R-18，是真的没结果，直接返回
-                return lastResult;
+                pluginState.logger.info(`搜索 "${keyword}" 第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张（本次 R-18 过滤 ${currentResult.r18Filtered} 个），重试中...`);
             } catch (error) {
                 pluginState.logger.error('Pixiv 搜索失败:', error);
                 throw error;
             }
         }
 
-        pluginState.logger.warn(`搜索 "${keyword}" 重试 ${maxRetries} 次后仍无安全结果`);
-        return lastResult;
+        const finalIllusts = Array.from(collectedMap.values()).slice(0, requiredCount);
+        if (finalIllusts.length > 0 && finalIllusts.length < requiredCount) {
+            pluginState.logger.info(`搜索 "${keyword}" 重试 ${maxRetries} 次后累计获取 ${finalIllusts.length}/${requiredCount} 张，将发送已有结果`);
+        } else if (finalIllusts.length === 0) {
+            pluginState.logger.info(`搜索 "${keyword}" 重试 ${maxRetries} 次后仍无安全结果`);
+        }
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered };
     }
 
     /**
@@ -168,35 +185,53 @@ export class PixivService {
         await this.ensureLoggedIn();
 
         const maxRetries = 3;
-        let lastResult: ExtractResult = { illusts: [], totalScanned: 0, r18Filtered: 0 };
+        const requiredCount = pluginState.config.resultCount ?? 3;
+        // 累积池：按 ID 去重叠加
+        const collectedMap = new Map<number, SafeIllust>();
+        let totalScanned = 0;
+        let totalR18Filtered = 0;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 const result = await this.client.illustRecommended();
                 const illusts = result.illusts || [];
                 // 推荐流本身有动态性，加上本地打乱效果更好
-                lastResult = this.extractTopSafe(illusts, true);
+                const currentResult = this.extractTopSafe(illusts, true);
 
-                if (lastResult.illusts.length > 0) {
-                    return lastResult;
+                // 去重叠加到累积池
+                for (const illust of currentResult.illusts) {
+                    if (!collectedMap.has(illust.id)) {
+                        collectedMap.set(illust.id, illust);
+                    }
+                }
+                totalScanned += currentResult.totalScanned;
+                totalR18Filtered += currentResult.r18Filtered;
+
+                // 已满足数量要求，直接返回
+                if (collectedMap.size >= requiredCount) {
+                    const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered };
                 }
 
-                // 如果是因为 R-18 过滤导致为空，尝试重试
-                if (lastResult.r18Filtered > 0) {
-                    pluginState.logger.info(`推荐第 ${attempt + 1} 次结果全被 R-18 过滤（过滤 ${lastResult.r18Filtered} 个），重试中...`);
-                    continue;
+                // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
+                if (currentResult.illusts.length === 0 && currentResult.r18Filtered === 0) {
+                    break;
                 }
 
-                // 不是因为 R-18，是真的没结果
-                return lastResult;
+                pluginState.logger.info(`推荐第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张（本次 R-18 过滤 ${currentResult.r18Filtered} 个），重试中...`);
             } catch (error) {
                 pluginState.logger.error('Pixiv 推荐获取失败:', error);
                 throw error;
             }
         }
 
-        pluginState.logger.warn(`推荐重试 ${maxRetries} 次后仍无安全结果`);
-        return lastResult;
+        const finalIllusts = Array.from(collectedMap.values()).slice(0, requiredCount);
+        if (finalIllusts.length > 0 && finalIllusts.length < requiredCount) {
+            pluginState.logger.info(`推荐重试 ${maxRetries} 次后累计获取 ${finalIllusts.length}/${requiredCount} 张，将发送已有结果`);
+        } else if (finalIllusts.length === 0) {
+            pluginState.logger.info(`推荐重试 ${maxRetries} 次后仍无安全结果`);
+        }
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered };
     }
 
     /**
