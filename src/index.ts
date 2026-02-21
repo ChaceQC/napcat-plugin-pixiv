@@ -15,7 +15,7 @@
  *   plugin_set_config         → 自定义配置保存
  *   plugin_on_config_change   → 配置变更回调
  *
- * @author Your Name
+ * @author ChaceQC
  * @license MIT
  */
 
@@ -84,24 +84,13 @@ export const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx, ev
 };
 
 /**
- * 事件处理（可选）
- * 处理所有 OneBot 事件（通知、请求等）
- */
-export const plugin_onevent: PluginModule['plugin_onevent'] = async (ctx, event) => {
-    // TODO: 在这里处理通知、请求等非消息事件
-    // 示例：
-    // if (event.post_type === EventType.NOTICE) { ... }
-    // if (event.post_type === EventType.REQUEST) { ... }
-};
-
-/**
  * 插件卸载/重载（可选）
  * 必须清理定时器、关闭连接等资源
  */
 export const plugin_cleanup: PluginModule['plugin_cleanup'] = async (ctx) => {
     try {
-        // TODO: 在这里清理你的资源（定时器、WebSocket 连接等）
         pluginState.cleanup();
+        pixivService.cleanupCache();
         ctx.logger.info('插件已卸载');
     } catch (e) {
         ctx.logger.warn('插件卸载时出错:', e);

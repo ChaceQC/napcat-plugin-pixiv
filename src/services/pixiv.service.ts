@@ -69,7 +69,8 @@ export class PixivService {
      * 从插画列表中提取前 3 个安全作品
      * 参照 main.py 的 _extract_and_download_top_3 逻辑
      */
-    private extractTop3Safe(illusts: any[], shuffle: boolean = true): ExtractResult {
+    private extractTopSafe(illusts: any[], shuffle: boolean = true): ExtractResult {
+        const count = pluginState.config.resultCount ?? 3;
         // 打乱列表实现随机效果
         if (shuffle && illusts.length > 0) {
             const shuffled = [...illusts];
@@ -83,7 +84,7 @@ export class PixivService {
         let r18Filtered = 0;
         const result: SafeIllust[] = [];
         for (const illust of illusts) {
-            if (result.length >= 3) break;
+            if (result.length >= count) break;
 
             // R-18 过滤：如果未启用 R18，跳过限制级内容
             if (!pluginState.config.r18Enabled && (illust.xRestrict !== 0 && illust.xRestrict !== undefined)) {
@@ -134,7 +135,7 @@ export class PixivService {
                 });
 
                 const illusts = result.illusts || [];
-                lastResult = this.extractTop3Safe(illusts, true);
+                lastResult = this.extractTopSafe(illusts, true);
 
                 // 累计统计
                 if (lastResult.illusts.length > 0) {
@@ -174,7 +175,7 @@ export class PixivService {
                 const result = await this.client.illustRecommended();
                 const illusts = result.illusts || [];
                 // 推荐流本身有动态性，加上本地打乱效果更好
-                lastResult = this.extractTop3Safe(illusts, true);
+                lastResult = this.extractTopSafe(illusts, true);
 
                 if (lastResult.illusts.length > 0) {
                     return lastResult;
@@ -222,6 +223,20 @@ export class PixivService {
         } catch (error) {
             pluginState.logger.error(`下载图片失败 ${imageUrl}:`, error);
             throw error;
+        }
+    }
+    /**
+     * 清理临时图片缓存目录
+     */
+    cleanupCache(): void {
+        const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
+        try {
+            if (fs.existsSync(tempDir)) {
+                fs.rmSync(tempDir, { recursive: true, force: true });
+                pluginState.logger.info('已清理临时图片缓存目录');
+            }
+        } catch (error) {
+            pluginState.logger.warn('清理临时缓存失败:', error);
         }
     }
 }

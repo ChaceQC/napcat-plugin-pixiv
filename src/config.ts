@@ -16,6 +16,9 @@ export const DEFAULT_CONFIG: PluginConfig = {
     pixivRefreshToken: '',
     r18Enabled: false,
     rateLimitPerMinute: 60,
+    searchTarget: 'partial_match_for_tags',
+    searchSort: 'date_desc',
+    resultCount: 3,
 };
 
 /**

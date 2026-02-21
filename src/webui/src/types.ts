@@ -20,6 +20,9 @@ export interface PluginConfig {
     pixivRefreshToken?: string
     r18Enabled?: boolean
     rateLimitPerMinute?: number
+    searchTarget?: 'partial_match_for_tags' | 'exact_match_for_tags' | 'title_and_caption'
+    searchSort?: 'date_desc' | 'date_asc' | 'popular_desc'
+    resultCount?: number
     groupConfigs?: Record<string, GroupConfig>
 }
 

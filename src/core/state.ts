@@ -46,6 +46,21 @@ function sanitizeConfig(raw: unknown): PluginConfig {
         const n = Number(raw.rateLimitPerMinute);
         if (!isNaN(n)) out.rateLimitPerMinute = n;
     }
+    // searchTarget 校验
+    const validTargets = ['partial_match_for_tags', 'exact_match_for_tags', 'title_and_caption'];
+    if (typeof raw.searchTarget === 'string' && validTargets.includes(raw.searchTarget)) {
+        out.searchTarget = raw.searchTarget as PluginConfig['searchTarget'];
+    }
+    // searchSort 校验
+    const validSorts = ['date_desc', 'date_asc', 'popular_desc'];
+    if (typeof raw.searchSort === 'string' && validSorts.includes(raw.searchSort)) {
+        out.searchSort = raw.searchSort as PluginConfig['searchSort'];
+    }
+    // resultCount 校验
+    if (raw.resultCount !== undefined && raw.resultCount !== null) {
+        const n = Number(raw.resultCount);
+        if (!isNaN(n) && n > 0 && n <= 10) out.resultCount = n;
+    }
 
 
     // 群配置清洗
@@ -54,13 +69,10 @@ function sanitizeConfig(raw: unknown): PluginConfig {
             if (isObject(groupConfig)) {
                 const cfg: GroupConfig = {};
                 if (typeof groupConfig.enabled === 'boolean') cfg.enabled = groupConfig.enabled;
-                // TODO: 在这里添加你的群配置项清洗
                 out.groupConfigs[groupId] = cfg;
             }
         }
     }
-
-    // TODO: 在这里添加你的配置项清洗逻辑
 
     return out;
 }

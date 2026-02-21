@@ -4,6 +4,8 @@ import qs from 'querystring';
 import decamelizeKeys from 'decamelize-keys';
 import camelcaseKeys from 'camelcase-keys';
 
+import { pluginState } from '../core/state';
+
 const baseURL = 'https://app-api.pixiv.net/';
 
 // Updated headers to mimic a more recent app version
@@ -77,11 +79,12 @@ export class PixivClient {
     }
 
     async searchIllust(word: string, params: any = {}) {
+        const searchTarget = pluginState.config.searchTarget || 'partial_match_for_tags';
+        const sort = pluginState.config.searchSort || 'date_desc';
         const defaultParams = {
             word,
-            searchTarget: 'title_and_caption',
-            sort: 'popular_desc',
-            // filter: 'for_ios',
+            searchTarget,
+            sort,
         };
         return this.fetch('/v1/search/illust', {
             params: { ...defaultParams, ...params }

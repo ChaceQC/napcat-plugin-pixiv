@@ -17,7 +17,7 @@ import { handlePixivCommand } from './pixiv-handler';
 
 // ==================== 全局频次限制（滑动窗口） ====================
 
-const requestTimestamps: number[] = [];
+let requestTimestamps: number[] = [];
 
 /**
  * 全局频次限制检查
@@ -31,10 +31,8 @@ function isRateLimited(): boolean {
     const now = Date.now();
     const windowMs = 60_000; // 1 分钟
 
-    // 清理超过窗口的旧记录
-    while (requestTimestamps.length > 0 && requestTimestamps[0] <= now - windowMs) {
-        requestTimestamps.shift();
-    }
+    // 过滤超过窗口的旧记录（重新赋值而非 shift，避免 O(n) 头部删除）
+    requestTimestamps = requestTimestamps.filter(ts => ts > now - windowMs);
 
     if (requestTimestamps.length >= limit) {
         pluginState.logger.debug(`全局频次限制触发: ${requestTimestamps.length}/${limit} 次/分钟`);
@@ -82,6 +80,24 @@ function setCooldown(groupId: number | string): void {
 /** 清空所有冷却记录（配置变更时调用） */
 export function clearCooldownMap(): void {
     cooldownMap.clear();
+}
+
+/**
+ * 检查冗却并回复
+ * @returns true 表示在冷却中，已自动回复提示信息
+ */
+async function checkCooldownAndReply(
+    ctx: NapCatPluginContext,
+    event: OB11Message,
+    groupId: number | string
+): Promise<boolean> {
+    const remaining = getCooldownRemaining(groupId);
+    if (remaining > 0) {
+        await sendReply(ctx, event, `请等待 ${remaining} 秒后再试`);
+        return true;
+    }
+    setCooldown(groupId);
+    return false;
 }
 
 // ==================== 消息发送工具 ====================
@@ -231,7 +247,6 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
         const rawMessage = event.raw_message || '';
         const messageType = event.message_type;
         const groupId = event.group_id;
-        const userId = event.user_id;
 
         pluginState.ctx.logger.debug(`收到消息: ${rawMessage} | 类型: ${messageType}`);
 
@@ -254,65 +269,15 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
             return;
         }
 
-        switch (subCommand) {
-            case 'help': {
-                const helpText = [
-                    `[= 插件帮助 =]`,
-                    `${prefix} help - 显示帮助信息`,
-                    `${prefix} ping - 测试连通性`,
-                    `${prefix} status - 查看运行状态`,
-                ].join('\n');
-                await sendReply(ctx, event, helpText);
-                break;
+        // 仅处理 p站 命令
+        if (subCommand === 'p站') {
+            // 群消息检查 CD
+            if (messageType === 'group' && groupId) {
+                if (await checkCooldownAndReply(ctx, event, groupId)) return;
             }
 
-            case 'ping': {
-                // 群消息检查 CD
-                if (messageType === 'group' && groupId) {
-                    const remaining = getCooldownRemaining(groupId);
-                    if (remaining > 0) {
-                        await sendReply(ctx, event, `请等待 ${remaining} 秒后再试`);
-                        return;
-                    }
-                    setCooldown(groupId);
-                }
-
-                await sendReply(ctx, event, 'pong!');
-                pluginState.incrementProcessed();
-                break;
-            }
-
-            case 'p站': {
-                // 群消息检查 CD
-                if (messageType === 'group' && groupId) {
-                    const remaining = getCooldownRemaining(groupId);
-                    if (remaining > 0) {
-                        await sendReply(ctx, event, `请等待 ${remaining} 秒后再试`);
-                        return;
-                    }
-                    setCooldown(groupId);
-                }
-
-                await handlePixivCommand(ctx, event, args.slice(1));
-                pluginState.incrementProcessed();
-                break;
-            }
-
-            case 'status': {
-                const statusText = [
-                    `[= 插件状态 =]`,
-                    `运行时长: ${pluginState.getUptimeFormatted()}`,
-                    `今日处理: ${pluginState.stats.todayProcessed}`,
-                    `总计处理: ${pluginState.stats.processed}`,
-                ].join('\n');
-                await sendReply(ctx, event, statusText);
-                break;
-            }
-
-            default: {
-                // TODO: 在这里处理你的主要命令逻辑
-                break;
-            }
+            await handlePixivCommand(ctx, event, args.slice(1));
+            pluginState.incrementProcessed();
         }
     } catch (error) {
         pluginState.logger.error('处理消息时出错:', error);

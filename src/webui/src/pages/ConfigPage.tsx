@@ -113,6 +113,35 @@ export default function ConfigPage() {
                         checked={config.r18Enabled || false}
                         onChange={(v) => updateField('r18Enabled', v)}
                     />
+                    <SelectRow
+                        label="搜索匹配模式"
+                        desc="关键词搜索时的匹配方式"
+                        value={config.searchTarget || 'partial_match_for_tags'}
+                        options={[
+                            { value: 'partial_match_for_tags', label: '标签模糊匹配' },
+                            { value: 'exact_match_for_tags', label: '标签精确匹配' },
+                            { value: 'title_and_caption', label: '标题和简介' },
+                        ]}
+                        onChange={(v) => updateField('searchTarget', v as PluginConfig['searchTarget'])}
+                    />
+                    <SelectRow
+                        label="搜索排序方式"
+                        desc="最新/最早发布免费可用，按热度排序需要 Pixiv Premium 会员 Token"
+                        value={config.searchSort || 'date_desc'}
+                        options={[
+                            { value: 'date_desc', label: '按日期倒序' },
+                            { value: 'date_asc', label: '按日期正序' },
+                            { value: 'popular_desc', label: '按热度降序' },
+                        ]}
+                        onChange={(v) => updateField('searchSort', v as PluginConfig['searchSort'])}
+                    />
+                    <InputRow
+                        label="返回图片数量"
+                        desc="每次搜索/推荐返回的图片数量（1-10）"
+                        value={String(config.resultCount ?? 3)}
+                        type="number"
+                        onChange={(v) => updateField('resultCount', Math.max(1, Math.min(10, Number(v) || 3)))}
+                    />
                     <InputRow
                         label="每分钟频次上限"
                         desc="所有群共享的全局请求限制，0 表示不限制"
@@ -174,6 +203,28 @@ function InputRow({ label, desc, value, type = 'text', onChange }: {
                 onBlur={handleBlur}
                 onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
             />
+        </div>
+    )
+}
+
+function SelectRow({ label, desc, value, options, onChange }: {
+    label: string; desc: string; value: string
+    options: { value: string; label: string }[]
+    onChange: (v: string) => void
+}) {
+    return (
+        <div>
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">{label}</div>
+            <div className="text-xs text-gray-400 mb-2">{desc}</div>
+            <select
+                className="input-field"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+            >
+                {options.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+            </select>
         </div>
     )
 }
