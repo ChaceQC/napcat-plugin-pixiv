@@ -8,7 +8,7 @@ dist/
 .vscode/*
 !.vscode/mcp.json
 .idea/
-.examole/
+.example/
 !.example/plugin
 *.swp
 *.swo
