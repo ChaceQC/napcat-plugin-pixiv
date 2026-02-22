@@ -68,6 +68,10 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 const { clearCooldownMap } = await import('../handlers/message-handler');
                 clearCooldownMap();
             }
+            if ('cacheAutoCleanMinutes' in body) {
+                const { registerCacheCleanTimer } = await import('../index');
+                registerCacheCleanTimer();
+            }
             ctx.logger.info('配置已保存');
             res.json({ code: 0, message: 'ok' });
         } catch (err) {

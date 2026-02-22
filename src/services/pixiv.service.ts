@@ -356,7 +356,7 @@ export class PixivService {
 
                     // 保护期内的文件跳过
                     if (now - stat.mtimeMs < protectMs) {
-                        pluginState.logger.debug(`[缓存] 跳过新文件: ${file}（${Math.round((now - stat.mtimeMs) / 1000)}秒前下载）`);
+                        pluginState.logger.info(`[缓存] 跳过新文件: ${file}（${Math.round((now - stat.mtimeMs) / 1000)}秒前下载）`);
                         continue;
                     }
 

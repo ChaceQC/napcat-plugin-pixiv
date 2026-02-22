@@ -171,6 +171,13 @@ export default function ConfigPage() {
                         type="number"
                         onChange={(v) => updateField('rateLimitPerMinute', Number(v) || 0)}
                     />
+                    <InputRow
+                        label="自动清理缓存间隔 (分钟)"
+                        desc="后台自动定时清理缓存的间隔，0 表示禁用"
+                        value={String(config.cacheAutoCleanMinutes ?? 30)}
+                        type="number"
+                        onChange={(v) => updateField('cacheAutoCleanMinutes', Number(v) || 0)}
+                    />
                 </div>
             </div>
 

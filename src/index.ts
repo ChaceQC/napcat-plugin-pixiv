@@ -42,7 +42,7 @@ const CACHE_TIMER_ID = 'cache-auto-clean';
  * 注册/重建缓存自动清理定时器
  * 配置变更时调用此函数可实时刷新定时器间隔
  */
-function registerCacheCleanTimer(): void {
+export function registerCacheCleanTimer(): void {
     // 先清除旧定时器
     const oldTimer = pluginState.timers.get(CACHE_TIMER_ID);
     if (oldTimer) {
