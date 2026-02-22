@@ -57,3 +57,24 @@ export interface ApiResponse<T = unknown> {
     /** 响应数据（仅成功时返回） */
     data?: T;
 }
+
+// ==================== 违禁词 ====================
+
+/** 违禁词匹配类型 */
+export type BannedWordMatchType = 'regex' | 'exact' | 'fuzzy';
+
+/**
+ * 违禁词条目
+ */
+export interface BannedWord {
+    /** 唯一标识符 */
+    id: string;
+    /** 匹配模式内容（正则表达式/精确词/模糊词） */
+    pattern: string;
+    /** 匹配类型 */
+    matchType: BannedWordMatchType;
+    /** 是否启用 */
+    enabled: boolean;
+    /** 创建时间戳 */
+    createdAt: number;
+}

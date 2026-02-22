@@ -45,3 +45,13 @@ export interface ApiResponse<T = unknown> {
     data?: T
     message?: string
 }
+
+export type BannedWordMatchType = 'regex' | 'exact' | 'fuzzy'
+
+export interface BannedWord {
+    id: string
+    pattern: string
+    matchType: BannedWordMatchType
+    enabled: boolean
+    createdAt: number
+}

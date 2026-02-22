@@ -11,6 +11,7 @@ import { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/t
 import { pixivService, SafeIllust, ExtractResult } from '../services/pixiv.service';
 import { sendReply, sendForwardMsg, ForwardNode } from './message-handler';
 import { pluginState } from '../core/state';
+import { bannedWordsService } from '../services/banned-words.service';
 
 export async function handlePixivCommand(
     ctx: NapCatPluginContext,
@@ -123,6 +124,14 @@ async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Messag
 
 async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keyword: string) {
     try {
+        // 违禁词关键词拦截
+        const bannedHit = bannedWordsService.checkKeyword(keyword);
+        if (bannedHit) {
+            pluginState.logger.info(`[违禁词] 搜索关键词 "${keyword}" 命中违禁词: "${bannedHit.pattern}" (${bannedHit.matchType})`);
+            await sendReply(ctx, event, `🚫 搜索关键词包含违禁内容，已拒绝搜索。`);
+            return;
+        }
+
         await sendReply(ctx, event, `🔍 正在搜索: ${keyword}...`);
 
         const result = await pixivService.searchTop3(keyword);

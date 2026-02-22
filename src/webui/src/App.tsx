@@ -5,15 +5,17 @@ import ToastContainer from './components/ToastContainer'
 import StatusPage from './pages/StatusPage'
 import ConfigPage from './pages/ConfigPage'
 import GroupsPage from './pages/GroupsPage'
+import BannedWordsPage from './pages/BannedWordsPage'
 import { useStatus } from './hooks/useStatus'
 import { useTheme } from './hooks/useTheme'
 
-export type PageId = 'status' | 'config' | 'groups'
+export type PageId = 'status' | 'config' | 'groups' | 'banned-words'
 
 const pageConfig: Record<PageId, { title: string; desc: string }> = {
     status: { title: '仪表盘', desc: '插件运行状态与数据概览' },
     config: { title: '插件配置', desc: '基础设置与参数配置' },
-    groups: { title: '群管理', desc: '管理群的启用与禁用' }
+    groups: { title: '群管理', desc: '管理群的启用与禁用' },
+    'banned-words': { title: '违禁词', desc: '管理搜索违禁词过滤规则' }
 }
 
 function App() {
@@ -38,6 +40,7 @@ function App() {
             case 'status': return <StatusPage status={status} onRefresh={fetchStatus} />
             case 'config': return <ConfigPage />
             case 'groups': return <GroupsPage />
+            case 'banned-words': return <BannedWordsPage />
             default: return <StatusPage status={status} onRefresh={fetchStatus} />
         }
     }

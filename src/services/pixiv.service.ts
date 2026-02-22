@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { pluginState } from '../core/state';
+import { bannedWordsService } from './banned-words.service';
 
 /** 安全插画信息（过滤后） */
 export interface SafeIllust {
@@ -20,6 +21,8 @@ export interface ExtractResult {
     totalScanned: number;
     /** 因 R-18 被过滤的数量 */
     r18Filtered: number;
+    /** 因违禁词被过滤的数量 */
+    bannedFiltered: number;
 }
 
 export class PixivService {
@@ -82,6 +85,7 @@ export class PixivService {
         }
 
         let r18Filtered = 0;
+        let bannedFiltered = 0;
         const result: SafeIllust[] = [];
         for (const illust of illusts) {
             if (result.length >= count) break;
@@ -90,6 +94,14 @@ export class PixivService {
             if (!pluginState.config.r18Enabled && (illust.xRestrict !== 0 && illust.xRestrict !== undefined)) {
                 r18Filtered++;
                 pluginState.logger.info(`[过滤] ID: ${illust.id} 包含限制级内容，已跳过`);
+                continue;
+            }
+
+            // 违禁词过滤：检查标题和标签
+            const bannedHit = bannedWordsService.checkIllust(illust);
+            if (bannedHit) {
+                bannedFiltered++;
+                pluginState.logger.info(`[违禁词] ID: ${illust.id} 标题/标签命中违禁词 "${bannedHit.pattern}"，已跳过`);
                 continue;
             }
 
@@ -111,7 +123,7 @@ export class PixivService {
             });
         }
 
-        return { illusts: result, totalScanned: illusts.length, r18Filtered };
+        return { illusts: result, totalScanned: illusts.length, r18Filtered, bannedFiltered };
     }
 
     /**
@@ -127,6 +139,7 @@ export class PixivService {
         const collectedMap = new Map<number, SafeIllust>();
         let totalScanned = 0;
         let totalR18Filtered = 0;
+        let totalBannedFiltered = 0;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
@@ -149,11 +162,12 @@ export class PixivService {
                 }
                 totalScanned += currentResult.totalScanned;
                 totalR18Filtered += currentResult.r18Filtered;
+                totalBannedFiltered += currentResult.bannedFiltered;
 
                 // 已满足数量要求，直接返回
                 if (collectedMap.size >= requiredCount) {
                     const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered };
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
                 }
 
                 // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
@@ -174,7 +188,7 @@ export class PixivService {
         } else if (finalIllusts.length === 0) {
             pluginState.logger.info(`搜索 "${keyword}" 重试 ${maxRetries} 次后仍无安全结果`);
         }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered };
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
     }
 
     /**
@@ -190,6 +204,7 @@ export class PixivService {
         const collectedMap = new Map<number, SafeIllust>();
         let totalScanned = 0;
         let totalR18Filtered = 0;
+        let totalBannedFiltered = 0;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
@@ -206,11 +221,12 @@ export class PixivService {
                 }
                 totalScanned += currentResult.totalScanned;
                 totalR18Filtered += currentResult.r18Filtered;
+                totalBannedFiltered += currentResult.bannedFiltered;
 
                 // 已满足数量要求，直接返回
                 if (collectedMap.size >= requiredCount) {
                     const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered };
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
                 }
 
                 // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
@@ -231,7 +247,7 @@ export class PixivService {
         } else if (finalIllusts.length === 0) {
             pluginState.logger.info(`推荐重试 ${maxRetries} 次后仍无安全结果`);
         }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered };
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
     }
 
     /**

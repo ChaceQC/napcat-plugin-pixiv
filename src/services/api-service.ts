@@ -22,6 +22,8 @@ import type {
     PluginHttpResponse
 } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { pluginState } from '../core/state';
+import { bannedWordsService } from './banned-words.service';
+import type { BannedWordMatchType } from '../types';
 
 /**
  * 注册 API 路由
@@ -144,7 +146,63 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         }
     });
 
-    // TODO: 在这里添加你的自定义 API 路由
+    // ==================== 违禁词管理（无鉴权）====================
+
+    /** 获取所有违禁词 */
+    router.getNoAuth('/banned-words', (_req, res) => {
+        res.json({ code: 0, data: bannedWordsService.getAll() });
+    });
+
+    /** 添加违禁词 */
+    router.postNoAuth('/banned-words', (req, res) => {
+        try {
+            const body = req.body as Record<string, unknown> | undefined;
+            const pattern = body?.pattern as string | undefined;
+            const matchType = body?.matchType as BannedWordMatchType | undefined;
+
+            if (!pattern || !matchType) {
+                return res.status(400).json({ code: -1, message: '缺少 pattern 或 matchType' });
+            }
+            if (!['regex', 'exact', 'fuzzy'].includes(matchType)) {
+                return res.status(400).json({ code: -1, message: 'matchType 必须为 regex / exact / fuzzy' });
+            }
+
+            const word = bannedWordsService.add(pattern, matchType);
+            res.json({ code: 0, data: word });
+        } catch (err) {
+            res.status(400).json({ code: -1, message: String(err instanceof Error ? err.message : err) });
+        }
+    });
+
+    /** 更新违禁词 */
+    router.postNoAuth('/banned-words/:id/update', (req, res) => {
+        try {
+            const id = req.params?.id;
+            if (!id) return res.status(400).json({ code: -1, message: '缺少 ID' });
+
+            const body = req.body as Record<string, unknown> | undefined;
+            const updated = bannedWordsService.update(id, {
+                pattern: body?.pattern as string | undefined,
+                matchType: body?.matchType as BannedWordMatchType | undefined,
+                enabled: typeof body?.enabled === 'boolean' ? body.enabled : undefined,
+            });
+
+            if (!updated) return res.status(404).json({ code: -1, message: '未找到该违禁词' });
+            res.json({ code: 0, data: updated });
+        } catch (err) {
+            res.status(400).json({ code: -1, message: String(err instanceof Error ? err.message : err) });
+        }
+    });
+
+    /** 删除违禁词 */
+    router.postNoAuth('/banned-words/:id/delete', (req, res) => {
+        const id = req.params?.id;
+        if (!id) return res.status(400).json({ code: -1, message: '缺少 ID' });
+
+        const ok = bannedWordsService.remove(id);
+        if (!ok) return res.status(404).json({ code: -1, message: '未找到该违禁词' });
+        res.json({ code: 0, message: 'ok' });
+    });
 
     ctx.logger.debug('API 路由注册完成');
 }
