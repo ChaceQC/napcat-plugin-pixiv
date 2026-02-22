@@ -24,6 +24,7 @@ export interface PluginConfig {
     searchTarget?: 'partial_match_for_tags' | 'exact_match_for_tags' | 'title_and_caption'
     searchSort?: 'date_desc' | 'date_asc' | 'popular_desc'
     resultCount?: number
+    cacheAutoCleanMinutes?: number
     groupConfigs?: Record<string, GroupConfig>
 }
 
@@ -55,4 +56,15 @@ export interface BannedWord {
     matchType: BannedWordMatchType
     enabled: boolean
     createdAt: number
+}
+
+export interface CacheInfo {
+    fileCount: number
+    totalSizeBytes: number
+    totalSizeFormatted: string
+}
+
+export interface CacheClearResult {
+    cleaned: number
+    remaining: CacheInfo
 }

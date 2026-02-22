@@ -62,6 +62,11 @@ function sanitizeConfig(raw: unknown): PluginConfig {
         const n = Number(raw.resultCount);
         if (!isNaN(n) && n > 0 && n <= 10) out.resultCount = n;
     }
+    // cacheAutoCleanMinutes 校验
+    if (raw.cacheAutoCleanMinutes !== undefined && raw.cacheAutoCleanMinutes !== null) {
+        const n = Number(raw.cacheAutoCleanMinutes);
+        if (!isNaN(n) && n >= 0) out.cacheAutoCleanMinutes = n;
+    }
 
 
     // 群配置清洗

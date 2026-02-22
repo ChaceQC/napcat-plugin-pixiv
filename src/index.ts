@@ -34,6 +34,39 @@ import { registerApiRoutes } from './services/api-service';
 import { pixivService } from './services/pixiv.service';
 import type { PluginConfig } from './types';
 
+// ==================== 缓存清理定时器 ====================
+
+const CACHE_TIMER_ID = 'cache-auto-clean';
+
+/**
+ * 注册/重建缓存自动清理定时器
+ * 配置变更时调用此函数可实时刷新定时器间隔
+ */
+function registerCacheCleanTimer(): void {
+    // 先清除旧定时器
+    const oldTimer = pluginState.timers.get(CACHE_TIMER_ID);
+    if (oldTimer) {
+        clearInterval(oldTimer);
+        pluginState.timers.delete(CACHE_TIMER_ID);
+        pluginState.logger.debug('已清除旧的缓存清理定时器');
+    }
+
+    const minutes = pluginState.config.cacheAutoCleanMinutes ?? 30;
+    if (minutes <= 0) {
+        pluginState.logger.info('缓存自动清理已禁用（间隔为 0）');
+        return;
+    }
+
+    const intervalMs = minutes * 60 * 1000;
+    const timer = setInterval(() => {
+        pluginState.logger.debug('执行自动缓存清理...');
+        pixivService.smartCleanupCache();
+    }, intervalMs);
+
+    pluginState.timers.set(CACHE_TIMER_ID, timer);
+    pluginState.logger.info(`缓存自动清理定时器已注册，间隔 ${minutes} 分钟`);
+}
+
 // ==================== 配置 UI Schema ====================
 
 /** NapCat WebUI 读取此导出来展示配置面板 */
@@ -64,6 +97,9 @@ export const plugin_init: PluginModule['plugin_init'] = async (ctx) => {
         // 5. Initialize Pixiv Service
         await pixivService.init();
 
+        // 6. 注册缓存自动清理定时器
+        registerCacheCleanTimer();
+
         ctx.logger.info('插件初始化完成');
     } catch (error) {
         ctx.logger.error('插件初始化失败:', error);
@@ -90,7 +126,7 @@ export const plugin_onmessage: PluginModule['plugin_onmessage'] = async (ctx, ev
 export const plugin_cleanup: PluginModule['plugin_cleanup'] = async (ctx) => {
     try {
         pluginState.cleanup();
-        pixivService.cleanupCache();
+        pixivService.cleanupCacheAll();
         ctx.logger.info('插件已卸载');
     } catch (e) {
         ctx.logger.warn('插件卸载时出错:', e);
@@ -109,6 +145,8 @@ export const plugin_set_config: PluginModule['plugin_set_config'] = async (ctx, 
     pluginState.replaceConfig(config as PluginConfig);
     ctx.logger.info('配置已通过 WebUI 更新，正在重新初始化 Pixiv 服务...');
     await pixivService.init();
+    // 重建缓存清理定时器（配置可能变更了间隔）
+    registerCacheCleanTimer();
 };
 
 /**
@@ -127,6 +165,10 @@ export const plugin_on_config_change: PluginModule['plugin_on_config_change'] = 
         if (key === 'cooldownSeconds') {
             clearCooldownMap();
             ctx.logger.info(`冷却时间已更新为 ${value} 秒，已重置所有冷却`);
+        }
+        if (key === 'cacheAutoCleanMinutes') {
+            registerCacheCleanTimer();
+            ctx.logger.info(`缓存清理间隔已更新为 ${value} 分钟`);
         }
     } catch (err) {
         ctx.logger.error(`更新配置项 ${key} 失败:`, err);

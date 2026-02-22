@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import type { PluginStatus } from '../types'
-import { IconPower, IconClock, IconActivity, IconDownload, IconRefresh, IconTerminal } from '../components/icons'
+import { useState, useEffect, useCallback } from 'react'
+import type { PluginStatus, CacheInfo, CacheClearResult } from '../types'
+import { noAuthFetch } from '../utils/api'
+import { IconPower, IconClock, IconActivity, IconDownload, IconRefresh, IconTerminal, IconTrash, IconFolder } from '../components/icons'
 
 interface StatusPageProps {
     status: PluginStatus | null
@@ -24,6 +25,9 @@ function formatUptime(uptimeMs: number): string {
 export default function StatusPage({ status, onRefresh }: StatusPageProps) {
     const [displayUptime, setDisplayUptime] = useState<string>('-')
     const [syncInfo, setSyncInfo] = useState<{ baseUptime: number; syncTime: number } | null>(null)
+    const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null)
+    const [clearing, setClearing] = useState(false)
+    const [clearResult, setClearResult] = useState<string | null>(null)
 
     useEffect(() => {
         if (status?.uptime !== undefined && status.uptime > 0) {
@@ -41,6 +45,38 @@ export default function StatusPage({ status, onRefresh }: StatusPageProps) {
         const interval = setInterval(updateUptime, 1000)
         return () => clearInterval(interval)
     }, [syncInfo])
+
+    const fetchCacheInfo = useCallback(async () => {
+        try {
+            const res = await noAuthFetch<CacheInfo>('/cache/status')
+            if (res.code === 0 && res.data) setCacheInfo(res.data)
+        } catch { /* ignore */ }
+    }, [])
+
+    useEffect(() => {
+        fetchCacheInfo()
+        const interval = setInterval(fetchCacheInfo, 10000)
+        return () => clearInterval(interval)
+    }, [fetchCacheInfo])
+
+    const handleClearCache = async () => {
+        setClearing(true)
+        setClearResult(null)
+        try {
+            const res = await noAuthFetch<CacheClearResult>('/cache/clear', { method: 'POST' })
+            if (res.code === 0 && res.data) {
+                setClearResult(`已清理 ${res.data.cleaned} 个文件`)
+                setCacheInfo(res.data.remaining)
+            } else {
+                setClearResult('清理失败')
+            }
+        } catch {
+            setClearResult('清理请求失败')
+        } finally {
+            setClearing(false)
+            setTimeout(() => setClearResult(null), 3000)
+        }
+    }
 
     if (!status) {
         return (
@@ -101,6 +137,41 @@ export default function StatusPage({ status, onRefresh }: StatusPageProps) {
                         <div className="text-xl font-bold text-gray-900 dark:text-white">{card.value}</div>
                     </div>
                 ))}
+            </div>
+
+            {/* 缓存管理 */}
+            <div className="card p-5 hover-lift animate-fade-in-up">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <IconFolder size={16} className="text-gray-400" />
+                        缓存管理
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        {clearResult && (
+                            <span className="text-xs text-emerald-500 animate-fade-in">{clearResult}</span>
+                        )}
+                        <button
+                            onClick={handleClearCache}
+                            disabled={clearing}
+                            className="btn-ghost btn text-xs px-2.5 py-1.5 text-red-500 hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                            <IconTrash size={13} />
+                            {clearing ? '清理中...' : '手动清理'}
+                        </button>
+                        <button onClick={fetchCacheInfo} className="btn-ghost btn text-xs px-2.5 py-1.5">
+                            <IconRefresh size={13} />
+                            刷新
+                        </button>
+                    </div>
+                </div>
+                <div className="space-y-3">
+                    <InfoRow label="缓存文件数" value={cacheInfo ? `${cacheInfo.fileCount} 个` : '-'} />
+                    <InfoRow label="占用空间" value={cacheInfo?.totalSizeFormatted ?? '-'} />
+                    <InfoRow label="自动清理间隔" value={config.cacheAutoCleanMinutes ? `${config.cacheAutoCleanMinutes} 分钟` : '已禁用'} />
+                    <div className="pt-1">
+                        <span className="text-[10px] text-gray-400">💡 智能清理会保护最近 5 分钟内下载的图片，正在上传的图片不会受影响</span>
+                    </div>
+                </div>
             </div>
 
             {/* 配置概览 */}

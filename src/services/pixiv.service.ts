@@ -309,18 +309,93 @@ export class PixivService {
         }
     }
     /**
-     * 清理临时图片缓存目录
+     * 获取缓存目录信息（文件数量和总大小）
      */
-    cleanupCache(): void {
+    getCacheInfo(): { fileCount: number; totalSizeBytes: number; totalSizeFormatted: string } {
+        const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
+        let fileCount = 0;
+        let totalSizeBytes = 0;
+
+        try {
+            if (fs.existsSync(tempDir)) {
+                const files = fs.readdirSync(tempDir);
+                for (const file of files) {
+                    try {
+                        const stat = fs.statSync(path.join(tempDir, file));
+                        if (stat.isFile()) {
+                            fileCount++;
+                            totalSizeBytes += stat.size;
+                        }
+                    } catch { /* ignore */ }
+                }
+            }
+        } catch { /* ignore */ }
+
+        return { fileCount, totalSizeBytes, totalSizeFormatted: this.formatBytes(totalSizeBytes) };
+    }
+
+    /**
+     * 智能清理缓存（保护最近 5 分钟内创建的文件，避免清理正在上传的图片）
+     * @returns 清理的文件数量
+     */
+    smartCleanupCache(): number {
+        const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
+        const protectMs = 5 * 60 * 1000; // 5 分钟保护期
+        const now = Date.now();
+        let cleaned = 0;
+
+        try {
+            if (!fs.existsSync(tempDir)) return 0;
+
+            const files = fs.readdirSync(tempDir);
+            for (const file of files) {
+                const filePath = path.join(tempDir, file);
+                try {
+                    const stat = fs.statSync(filePath);
+                    if (!stat.isFile()) continue;
+
+                    // 保护期内的文件跳过
+                    if (now - stat.mtimeMs < protectMs) {
+                        pluginState.logger.debug(`[缓存] 跳过新文件: ${file}（${Math.round((now - stat.mtimeMs) / 1000)}秒前下载）`);
+                        continue;
+                    }
+
+                    fs.unlinkSync(filePath);
+                    cleaned++;
+                } catch { /* ignore single file error */ }
+            }
+
+            if (cleaned > 0) {
+                pluginState.logger.info(`已智能清理 ${cleaned} 个缓存文件`);
+            }
+        } catch (error) {
+            pluginState.logger.warn('智能清理缓存失败:', error);
+        }
+
+        return cleaned;
+    }
+
+    /**
+     * 全量清理缓存目录（插件卸载时使用）
+     */
+    cleanupCacheAll(): void {
         const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
         try {
             if (fs.existsSync(tempDir)) {
                 fs.rmSync(tempDir, { recursive: true, force: true });
-                pluginState.logger.info('已清理临时图片缓存目录');
+                pluginState.logger.info('已全量清理临时图片缓存目录');
             }
         } catch (error) {
-            pluginState.logger.warn('清理临时缓存失败:', error);
+            pluginState.logger.warn('全量清理临时缓存失败:', error);
         }
+    }
+
+    /** 格式化字节为可读大小 */
+    private formatBytes(bytes: number): string {
+        if (bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
     }
 }
 

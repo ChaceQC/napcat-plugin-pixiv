@@ -23,6 +23,7 @@ import type {
 } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { pluginState } from '../core/state';
 import { bannedWordsService } from './banned-words.service';
+import { pixivService } from './pixiv.service';
 import type { BannedWordMatchType } from '../types';
 
 /**
@@ -202,6 +203,26 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
         const ok = bannedWordsService.remove(id);
         if (!ok) return res.status(404).json({ code: -1, message: '未找到该违禁词' });
         res.json({ code: 0, message: 'ok' });
+    });
+
+    // ==================== 缓存管理（无鉴权）====================
+
+    /** 获取缓存状态 */
+    router.getNoAuth('/cache/status', (_req, res) => {
+        const info = pixivService.getCacheInfo();
+        res.json({ code: 0, data: info });
+    });
+
+    /** 手动清理缓存（智能清理，保护新文件） */
+    router.postNoAuth('/cache/clear', (_req, res) => {
+        try {
+            const cleaned = pixivService.smartCleanupCache();
+            const info = pixivService.getCacheInfo();
+            res.json({ code: 0, data: { cleaned, remaining: info } });
+        } catch (err) {
+            ctx.logger.error('手动清理缓存失败:', err);
+            res.status(500).json({ code: -1, message: String(err) });
+        }
     });
 
     ctx.logger.debug('API 路由注册完成');

@@ -34,6 +34,8 @@ export interface PluginConfig {
     searchSort?: 'date_desc' | 'date_asc' | 'popular_desc';
     /** 每次返回的图片数量，默认 3 */
     resultCount?: number;
+    /** 缓存自动清理间隔（分钟），默认 30，0 表示禁用 */
+    cacheAutoCleanMinutes?: number;
     /** 按群的单独配置 */
     groupConfigs: Record<string, GroupConfig>;
 }
