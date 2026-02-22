@@ -108,10 +108,32 @@ export default function ConfigPage() {
                         onChange={(v) => updateField('pixivRefreshToken', v)}
                     />
                     <ToggleRow
+                        label="含敏感内容的作品"
+                        desc="允许 sanity_level ≥ 4 的含敏感内容作品，关闭后同步关闭 R-18"
+                        checked={config.sensitiveEnabled || false}
+                        onChange={(v) => {
+                            if (!v && config.r18Enabled) {
+                                // 关闭敏感 → 同步关闭 R18
+                                setConfig({ ...config, sensitiveEnabled: false, r18Enabled: false })
+                                saveConfig({ sensitiveEnabled: false, r18Enabled: false })
+                            } else {
+                                updateField('sensitiveEnabled', v)
+                            }
+                        }}
+                    />
+                    <ToggleRow
                         label="启用 R-18"
-                        desc="是否允许搜索和推荐 R-18 内容"
+                        desc="允许搜索和推荐 R-18 内容，开启后同步开启敏感内容"
                         checked={config.r18Enabled || false}
-                        onChange={(v) => updateField('r18Enabled', v)}
+                        onChange={(v) => {
+                            if (v && !config.sensitiveEnabled) {
+                                // 开启 R18 → 同步开启敏感
+                                setConfig({ ...config, r18Enabled: true, sensitiveEnabled: true })
+                                saveConfig({ r18Enabled: true, sensitiveEnabled: true })
+                            } else {
+                                updateField('r18Enabled', v)
+                            }
+                        }}
                     />
                     <SelectRow
                         label="搜索匹配模式"

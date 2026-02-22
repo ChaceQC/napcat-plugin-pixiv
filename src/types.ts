@@ -23,6 +23,8 @@ export interface PluginConfig {
     /** 同一命令请求冷却时间（秒），0 表示不限制 */
     cooldownSeconds?: number;
     pixivRefreshToken?: string;
+    /** 是否允许含敏感内容的作品 (sanity_level >= 4) */
+    sensitiveEnabled?: boolean;
     r18Enabled?: boolean;
     /** 全局每分钟频次限制（所有群共享），0 表示不限制，默认 60 */
     rateLimitPerMinute?: number;

@@ -14,6 +14,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
     cooldownSeconds: 60,
     groupConfigs: {},
     pixivRefreshToken: '',
+    sensitiveEnabled: false,
     r18Enabled: false,
     rateLimitPerMinute: 60,
     searchTarget: 'partial_match_for_tags',

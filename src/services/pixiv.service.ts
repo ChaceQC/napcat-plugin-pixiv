@@ -21,6 +21,8 @@ export interface ExtractResult {
     totalScanned: number;
     /** 因 R-18 被过滤的数量 */
     r18Filtered: number;
+    /** 因敏感内容被过滤的数量 */
+    sensitiveFiltered: number;
     /** 因违禁词被过滤的数量 */
     bannedFiltered: number;
 }
@@ -85,6 +87,7 @@ export class PixivService {
         }
 
         let r18Filtered = 0;
+        let sensitiveFiltered = 0;
         let bannedFiltered = 0;
         const result: SafeIllust[] = [];
         for (const illust of illusts) {
@@ -94,6 +97,14 @@ export class PixivService {
             if (!pluginState.config.r18Enabled && (illust.xRestrict !== 0 && illust.xRestrict !== undefined)) {
                 r18Filtered++;
                 pluginState.logger.info(`[过滤] ID: ${illust.id} 包含限制级内容，已跳过`);
+                continue;
+            }
+
+            // 敏感内容过滤：如果未启用敏感内容，跳过 sanity_level >= 4 的作品
+            const sanityLevel = illust.sanityLevel ?? illust.sanity_level ?? 0;
+            if (!pluginState.config.sensitiveEnabled && sanityLevel >= 4) {
+                sensitiveFiltered++;
+                pluginState.logger.info(`[过滤] ID: ${illust.id} 含敏感内容 (sanity_level=${sanityLevel})，已跳过`);
                 continue;
             }
 
@@ -123,7 +134,7 @@ export class PixivService {
             });
         }
 
-        return { illusts: result, totalScanned: illusts.length, r18Filtered, bannedFiltered };
+        return { illusts: result, totalScanned: illusts.length, r18Filtered, sensitiveFiltered, bannedFiltered };
     }
 
     /**
@@ -139,6 +150,7 @@ export class PixivService {
         const collectedMap = new Map<number, SafeIllust>();
         let totalScanned = 0;
         let totalR18Filtered = 0;
+        let totalSensitiveFiltered = 0;
         let totalBannedFiltered = 0;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -162,12 +174,13 @@ export class PixivService {
                 }
                 totalScanned += currentResult.totalScanned;
                 totalR18Filtered += currentResult.r18Filtered;
+                totalSensitiveFiltered += currentResult.sensitiveFiltered;
                 totalBannedFiltered += currentResult.bannedFiltered;
 
                 // 已满足数量要求，直接返回
                 if (collectedMap.size >= requiredCount) {
                     const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
                 }
 
                 // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
@@ -188,7 +201,7 @@ export class PixivService {
         } else if (finalIllusts.length === 0) {
             pluginState.logger.info(`搜索 "${keyword}" 重试 ${maxRetries} 次后仍无安全结果`);
         }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
     }
 
     /**
@@ -204,6 +217,7 @@ export class PixivService {
         const collectedMap = new Map<number, SafeIllust>();
         let totalScanned = 0;
         let totalR18Filtered = 0;
+        let totalSensitiveFiltered = 0;
         let totalBannedFiltered = 0;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -221,12 +235,13 @@ export class PixivService {
                 }
                 totalScanned += currentResult.totalScanned;
                 totalR18Filtered += currentResult.r18Filtered;
+                totalSensitiveFiltered += currentResult.sensitiveFiltered;
                 totalBannedFiltered += currentResult.bannedFiltered;
 
                 // 已满足数量要求，直接返回
                 if (collectedMap.size >= requiredCount) {
                     const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
                 }
 
                 // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
@@ -247,7 +262,7 @@ export class PixivService {
         } else if (finalIllusts.length === 0) {
             pluginState.logger.info(`推荐重试 ${maxRetries} 次后仍无安全结果`);
         }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, bannedFiltered: totalBannedFiltered };
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
     }
 
     /**

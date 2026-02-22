@@ -18,6 +18,7 @@ export interface PluginConfig {
     commandPrefix: string
     cooldownSeconds: number
     pixivRefreshToken?: string
+    sensitiveEnabled?: boolean
     r18Enabled?: boolean
     rateLimitPerMinute?: number
     searchTarget?: 'partial_match_for_tags' | 'exact_match_for_tags' | 'title_and_caption'
