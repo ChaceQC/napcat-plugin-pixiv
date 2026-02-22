@@ -41,6 +41,7 @@ function sanitizeConfig(raw: unknown): PluginConfig {
     }
     if (typeof raw.pixivRefreshToken === 'string') out.pixivRefreshToken = raw.pixivRefreshToken;
     if (typeof raw.r18Enabled === 'boolean') out.r18Enabled = raw.r18Enabled;
+    if (typeof raw.sensitiveEnabled === 'boolean') out.sensitiveEnabled = raw.sensitiveEnabled;
     // rateLimitPerMinute 可能以字符串形式传入（NapCat 配置面板）
     if (raw.rateLimitPerMinute !== undefined && raw.rateLimitPerMinute !== null) {
         const n = Number(raw.rateLimitPerMinute);
