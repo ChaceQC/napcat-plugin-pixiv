@@ -144,7 +144,7 @@ export class PixivService {
     async searchTop3(keyword: string): Promise<ExtractResult> {
         await this.ensureLoggedIn();
 
-        const maxRetries = 3;
+        const maxRetries = 5;
         const requiredCount = pluginState.config.resultCount ?? 3;
         // 累积池：按 ID 去重叠加
         const collectedMap = new Map<number, SafeIllust>();
@@ -153,11 +153,15 @@ export class PixivService {
         let totalSensitiveFiltered = 0;
         let totalBannedFiltered = 0;
 
+        // offset 上限仅在 API 真的返回空结果时递减，过滤导致的不足不缩小范围
+        const offsetLimits = [300, 200, 100, 50, 0];
+        let offsetLevel = 0;
+
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                // 随机偏移量（0~150），参照 main.py
-                const randomOffset = Math.floor(Math.random() * 151);
-                pluginState.logger.debug(`搜索 "${keyword}"，随机偏移: ${randomOffset}（第 ${attempt + 1} 次尝试）`);
+                const maxOffset = offsetLimits[Math.min(offsetLevel, offsetLimits.length - 1)];
+                const randomOffset = maxOffset > 0 ? Math.floor(Math.random() * (maxOffset + 1)) : 0;
+                pluginState.logger.debug(`搜索 "${keyword}"，随机偏移: ${randomOffset}（第 ${attempt + 1} 次尝试，偏移上限: ${maxOffset}）`);
 
                 const result = await this.client.searchIllust(keyword, {
                     offset: randomOffset,
@@ -183,12 +187,19 @@ export class PixivService {
                     return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
                 }
 
-                // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
-                if (currentResult.illusts.length === 0 && currentResult.r18Filtered === 0) {
-                    break;
+                // API 返回空结果（非过滤导致）→ 缩小偏移范围
+                if (illusts.length === 0) {
+                    offsetLevel++;
+                    // 已用最小偏移仍为空，真的没结果
+                    if (maxOffset === 0) break;
                 }
 
-                pluginState.logger.info(`搜索 "${keyword}" 第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张（本次 R-18 过滤 ${currentResult.r18Filtered} 个），重试中...`);
+                const filterParts: string[] = [];
+                if (currentResult.r18Filtered > 0) filterParts.push(`R-18: ${currentResult.r18Filtered}`);
+                if (currentResult.sensitiveFiltered > 0) filterParts.push(`敏感: ${currentResult.sensitiveFiltered}`);
+                if (currentResult.bannedFiltered > 0) filterParts.push(`违禁词: ${currentResult.bannedFiltered}`);
+                const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
+                pluginState.logger.info(`搜索 "${keyword}" 第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
             } catch (error) {
                 pluginState.logger.error('Pixiv 搜索失败:', error);
                 throw error;
@@ -244,12 +255,18 @@ export class PixivService {
                     return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
                 }
 
-                // 没有任何结果且不是 R-18 过滤导致的，说明真的没结果
-                if (currentResult.illusts.length === 0 && currentResult.r18Filtered === 0) {
+                // 没有任何结果且不是过滤导致的，说明真的没结果
+                const totalFiltered = currentResult.r18Filtered + currentResult.sensitiveFiltered + currentResult.bannedFiltered;
+                if (currentResult.illusts.length === 0 && totalFiltered === 0) {
                     break;
                 }
 
-                pluginState.logger.info(`推荐第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张（本次 R-18 过滤 ${currentResult.r18Filtered} 个），重试中...`);
+                const filterParts: string[] = [];
+                if (currentResult.r18Filtered > 0) filterParts.push(`R-18: ${currentResult.r18Filtered}`);
+                if (currentResult.sensitiveFiltered > 0) filterParts.push(`敏感: ${currentResult.sensitiveFiltered}`);
+                if (currentResult.bannedFiltered > 0) filterParts.push(`违禁词: ${currentResult.bannedFiltered}`);
+                const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
+                pluginState.logger.info(`推荐第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
             } catch (error) {
                 pluginState.logger.error('Pixiv 推荐获取失败:', error);
                 throw error;
