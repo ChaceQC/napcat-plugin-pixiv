@@ -95,13 +95,14 @@ async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Messag
         const result = await pixivService.getRandomTop3();
 
         if (result.illusts.length === 0) {
-            const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered;
+            const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered + result.duplicateFiltered;
             if (totalFiltered > 0) {
                 const parts: string[] = [];
                 if (result.r18Filtered > 0) parts.push(`R-18: ${result.r18Filtered}`);
                 if (result.sensitiveFiltered > 0) parts.push(`敏感: ${result.sensitiveFiltered}`);
                 if (result.bannedFiltered > 0) parts.push(`违禁词: ${result.bannedFiltered}`);
-                await sendReply(ctx, event, `🔞 推荐内容均为限制级内容（已过滤 ${parts.join('、')}），换个时间再试试吧~`);
+                if (result.duplicateFiltered > 0) parts.push(`近期重复: ${result.duplicateFiltered}`);
+                await sendReply(ctx, event, `🔞 推荐内容均为限制级内容或近期已发送过（已过滤 ${parts.join('、')}），换个时间再试试吧~`);
             } else {
                 await sendReply(ctx, event, '未找到推荐内容。');
             }
@@ -142,13 +143,14 @@ async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keywor
         const result = await pixivService.searchTop3(keyword);
 
         if (result.illusts.length === 0) {
-            const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered;
+            const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered + result.duplicateFiltered;
             if (totalFiltered > 0) {
                 const parts: string[] = [];
                 if (result.r18Filtered > 0) parts.push(`R-18: ${result.r18Filtered}`);
                 if (result.sensitiveFiltered > 0) parts.push(`敏感: ${result.sensitiveFiltered}`);
                 if (result.bannedFiltered > 0) parts.push(`违禁词: ${result.bannedFiltered}`);
-                await sendReply(ctx, event, `🔞 「${keyword}」的搜索结果均为限制级内容（已过滤 ${parts.join('、')}），请尝试其他关键词~`);
+                if (result.duplicateFiltered > 0) parts.push(`近期重复: ${result.duplicateFiltered}`);
+                await sendReply(ctx, event, `🔞 「${keyword}」的搜索结果均为限制级内容或近期已发送过（已过滤 ${parts.join('、')}），请尝试其他关键词~`);
             } else {
                 await sendReply(ctx, event, '未找到相关内容。');
             }

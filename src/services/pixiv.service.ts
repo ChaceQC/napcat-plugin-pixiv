@@ -25,11 +25,15 @@ export interface ExtractResult {
     sensitiveFiltered: number;
     /** 因违禁词被过滤的数量 */
     bannedFiltered: number;
+    /** 因近期重复发送被过滤的数量 */
+    duplicateFiltered: number;
 }
 
 export class PixivService {
     private client: PixivClient;
     private isLoggedIn: boolean = false;
+    private sentCache = new Map<number, number>(); // <illustId, expireTimeMs>
+    private readonly cacheTtl = 5 * 60 * 1000; // 5分钟
 
     constructor() {
         this.client = new PixivClient();
@@ -86,12 +90,29 @@ export class PixivService {
             illusts = shuffled;
         }
 
+        const now = Date.now();
+        // 清理过期的缓存
+        for (const [id, expireTime] of this.sentCache.entries()) {
+            if (now > expireTime) {
+                this.sentCache.delete(id);
+            }
+        }
+
         let r18Filtered = 0;
         let sensitiveFiltered = 0;
         let bannedFiltered = 0;
+        let duplicateFiltered = 0;
         const result: SafeIllust[] = [];
+
         for (const illust of illusts) {
             if (result.length >= count) break;
+
+            // 重复过滤：如果近期已发送过，跳过
+            if (this.sentCache.has(illust.id)) {
+                duplicateFiltered++;
+                pluginState.logger.info(`[过滤] ID: ${illust.id} 包含近期已发送的内容，已跳过`);
+                continue;
+            }
 
             // R-18 过滤：如果未启用 R18，跳过限制级内容
             if (!pluginState.config.r18Enabled && (illust.xRestrict !== 0 && illust.xRestrict !== undefined)) {
@@ -134,7 +155,7 @@ export class PixivService {
             });
         }
 
-        return { illusts: result, totalScanned: illusts.length, r18Filtered, sensitiveFiltered, bannedFiltered };
+        return { illusts: result, totalScanned: illusts.length, r18Filtered, sensitiveFiltered, bannedFiltered, duplicateFiltered };
     }
 
     /**
@@ -152,6 +173,7 @@ export class PixivService {
         let totalR18Filtered = 0;
         let totalSensitiveFiltered = 0;
         let totalBannedFiltered = 0;
+        let totalDuplicateFiltered = 0;
 
         // offset 上限仅在 API 真的返回空结果时递减，过滤导致的不足不缩小范围
         const offsetLimits = [300, 200, 100, 50, 0];
@@ -180,11 +202,17 @@ export class PixivService {
                 totalR18Filtered += currentResult.r18Filtered;
                 totalSensitiveFiltered += currentResult.sensitiveFiltered;
                 totalBannedFiltered += currentResult.bannedFiltered;
+                totalDuplicateFiltered += currentResult.duplicateFiltered;
 
                 // 已满足数量要求，直接返回
                 if (collectedMap.size >= requiredCount) {
                     const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
+                    // 记录发送的图片到近期缓存
+                    const now = Date.now();
+                    for (const illust of collected) {
+                        this.sentCache.set(illust.id, now + this.cacheTtl);
+                    }
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
                 }
 
                 // API 返回空结果（非过滤导致）→ 缩小偏移范围
@@ -198,6 +226,7 @@ export class PixivService {
                 if (currentResult.r18Filtered > 0) filterParts.push(`R-18: ${currentResult.r18Filtered}`);
                 if (currentResult.sensitiveFiltered > 0) filterParts.push(`敏感: ${currentResult.sensitiveFiltered}`);
                 if (currentResult.bannedFiltered > 0) filterParts.push(`违禁词: ${currentResult.bannedFiltered}`);
+                if (currentResult.duplicateFiltered > 0) filterParts.push(`近期重复: ${currentResult.duplicateFiltered}`);
                 const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
                 pluginState.logger.info(`搜索 "${keyword}" 第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
             } catch (error) {
@@ -212,7 +241,12 @@ export class PixivService {
         } else if (finalIllusts.length === 0) {
             pluginState.logger.info(`搜索 "${keyword}" 重试 ${maxRetries} 次后仍无安全结果`);
         }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
+        // 记录发送的图片到近期缓存
+        const now = Date.now();
+        for (const illust of finalIllusts) {
+            this.sentCache.set(illust.id, now + this.cacheTtl);
+        }
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
     }
 
     /**
@@ -230,6 +264,7 @@ export class PixivService {
         let totalR18Filtered = 0;
         let totalSensitiveFiltered = 0;
         let totalBannedFiltered = 0;
+        let totalDuplicateFiltered = 0;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
@@ -248,15 +283,21 @@ export class PixivService {
                 totalR18Filtered += currentResult.r18Filtered;
                 totalSensitiveFiltered += currentResult.sensitiveFiltered;
                 totalBannedFiltered += currentResult.bannedFiltered;
+                totalDuplicateFiltered += currentResult.duplicateFiltered;
 
                 // 已满足数量要求，直接返回
                 if (collectedMap.size >= requiredCount) {
                     const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
+                    // 记录发送的图片到近期缓存
+                    const now = Date.now();
+                    for (const illust of collected) {
+                        this.sentCache.set(illust.id, now + this.cacheTtl);
+                    }
+                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
                 }
 
                 // 没有任何结果且不是过滤导致的，说明真的没结果
-                const totalFiltered = currentResult.r18Filtered + currentResult.sensitiveFiltered + currentResult.bannedFiltered;
+                const totalFiltered = currentResult.r18Filtered + currentResult.sensitiveFiltered + currentResult.bannedFiltered + currentResult.duplicateFiltered;
                 if (currentResult.illusts.length === 0 && totalFiltered === 0) {
                     break;
                 }
@@ -265,6 +306,7 @@ export class PixivService {
                 if (currentResult.r18Filtered > 0) filterParts.push(`R-18: ${currentResult.r18Filtered}`);
                 if (currentResult.sensitiveFiltered > 0) filterParts.push(`敏感: ${currentResult.sensitiveFiltered}`);
                 if (currentResult.bannedFiltered > 0) filterParts.push(`违禁词: ${currentResult.bannedFiltered}`);
+                if (currentResult.duplicateFiltered > 0) filterParts.push(`近期重复: ${currentResult.duplicateFiltered}`);
                 const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
                 pluginState.logger.info(`推荐第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
             } catch (error) {
@@ -279,7 +321,12 @@ export class PixivService {
         } else if (finalIllusts.length === 0) {
             pluginState.logger.info(`推荐重试 ${maxRetries} 次后仍无安全结果`);
         }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered };
+        // 记录发送的图片到近期缓存
+        const now = Date.now();
+        for (const illust of finalIllusts) {
+            this.sentCache.set(illust.id, now + this.cacheTtl);
+        }
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
     }
 
     /**
