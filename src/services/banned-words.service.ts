@@ -162,7 +162,7 @@ class BannedWordsService {
         // 检查标签
         if (illust.tags) {
 
-            pluginState.logger.info(illust.tags);
+            // pluginState.logger.info(illust.tags);
 
             for (const tag of illust.tags) {
                 if (tag.name) {
@@ -174,6 +174,8 @@ class BannedWordsService {
                     const hit = this.matchText(tag.translatedName);
                     if (hit) return hit;
                 }
+
+                // pluginState.logger.info(tag.name, tag.translatedName);
             }
         }
         return null;
