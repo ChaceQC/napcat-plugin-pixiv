@@ -15,6 +15,7 @@ const headers = {
     'App-OS-Version': '14.6',
     'App-Version': '7.13.3',
     'User-Agent': 'PixivIOSApp/7.13.3 (iOS 14.6; iPhone13,2)',
+    'Accept-Language': 'zh-CN',
 };
 
 const instance = axios.create({
