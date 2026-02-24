@@ -109,8 +109,9 @@ async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Messag
             return;
         }
 
-        const senderName = event.sender?.nickname || event.sender?.card || '未知用户';
-        const nodes = await buildForwardNodes(result.illusts, `🌟 随机推荐 | 来自 ${senderName}`);
+        const senderName = event.sender?.card || event.sender?.nickname || '未知用户';
+        const userId = event.sender?.user_id || event.user_id || '未知QQ号';
+        const nodes = await buildForwardNodes(result.illusts, `🌟 随机推荐 | 来自 ${senderName} (${userId})\n`);
         if (nodes.length === 0) {
             await sendReply(ctx, event, '图片下载失败，请稍后重试。');
             return;
@@ -157,8 +158,9 @@ async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keywor
             return;
         }
 
-        const senderName = event.sender?.nickname || event.sender?.card || '未知用户';
-        const nodes = await buildForwardNodes(result.illusts, `🔍 搜索: ${keyword} | 来自 ${senderName}`);
+        const senderName = event.sender?.card || event.sender?.nickname || '未知用户';
+        const userId = event.sender?.user_id || event.user_id || '未知QQ号';
+        const nodes = await buildForwardNodes(result.illusts, `🔍 搜索: ${keyword} | 来自 ${senderName} (${userId})\n`);
         if (nodes.length === 0) {
             await sendReply(ctx, event, '图片下载失败，请稍后重试。');
             return;
