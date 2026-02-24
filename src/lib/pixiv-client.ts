@@ -20,6 +20,7 @@ const headers = {
 const instance = axios.create({
     baseURL,
     headers,
+    timeout: 60000, // 添加 1 分钟全局超时，防止网络死锁不释放
 });
 
 const CLIENT_ID = 'MOBrBDS8blbauoSck0ZfDbtuzpyT';
@@ -31,51 +32,63 @@ export class PixivClient {
     private auth: any = null;
     private nextUrl: string | null = null;
     private camelcaseKeys: boolean = true;
+    private loginPromise: Promise<any> | null = null;
 
     constructor(options: { camelcaseKeys?: boolean } = {}) {
         this.camelcaseKeys = options.camelcaseKeys !== false;
     }
 
     async login(refreshToken: string) {
-        this.refreshToken = refreshToken;
-
-        const now = new Date();
-        const localTime = now.toISOString().replace(/\.\d{3}Z$/, '+00:00');
-
-        const requestHeaders = {
-            ...headers,
-            'X-Client-Time': localTime,
-            'X-Client-Hash': crypto.createHash('md5')
-                .update(Buffer.from(`${localTime}${HASH_SECRET}`, 'utf8'))
-                .digest('hex'),
-        };
-
-        const data: any = {
-            clientId: CLIENT_ID,
-            clientSecret: CLIENT_SECRET,
-            getSecureUrl: 1,
-            grantType: 'refresh_token',
-            refreshToken: this.refreshToken,
-        };
-
-        try {
-            const response = await axios.post(
-                'https://oauth.secure.pixiv.net/auth/token',
-                qs.stringify(decamelizeKeys(data)),
-                { headers: requestHeaders }
-            );
-
-            this.auth = response.data.response;
-            this.refreshToken = response.data.response.refresh_token;
-
-            const accessToken = response.data.response.access_token;
-            instance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
-
-            return this.camelcaseKeys ? camelcaseKeys(this.auth, { deep: true }) : this.auth;
-        } catch (error: any) {
-            console.error('Pixiv Login Error Details:', error.response?.data || error.message);
-            throw error;
+        // 如果有正在进行的登录，则等待其完成，避免并发导致的大量 400 失败
+        if (this.loginPromise) {
+            return this.loginPromise;
         }
+
+        this.loginPromise = (async () => {
+            this.refreshToken = refreshToken;
+
+            const now = new Date();
+            const localTime = now.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+
+            const requestHeaders = {
+                ...headers,
+                'X-Client-Time': localTime,
+                'X-Client-Hash': crypto.createHash('md5')
+                    .update(Buffer.from(`${localTime}${HASH_SECRET}`, 'utf8'))
+                    .digest('hex'),
+            };
+
+            const data: any = {
+                clientId: CLIENT_ID,
+                clientSecret: CLIENT_SECRET,
+                getSecureUrl: 1,
+                grantType: 'refresh_token',
+                refreshToken: this.refreshToken,
+            };
+
+            try {
+                const response = await axios.post(
+                    'https://oauth.secure.pixiv.net/auth/token',
+                    qs.stringify(decamelizeKeys(data)),
+                    { headers: requestHeaders }
+                );
+
+                this.auth = response.data.response;
+                this.refreshToken = response.data.response.refresh_token;
+
+                const accessToken = response.data.response.access_token;
+                instance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+
+                return this.camelcaseKeys ? camelcaseKeys(this.auth, { deep: true }) : this.auth;
+            } catch (error: any) {
+                console.error('Pixiv Login Error Details:', error.response?.data || error.message);
+                throw error;
+            } finally {
+                this.loginPromise = null;
+            }
+        })();
+
+        return this.loginPromise;
     }
 
     async searchIllust(word: string, params: any = {}) {

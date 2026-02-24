@@ -34,6 +34,8 @@ export class PixivService {
     private isLoggedIn: boolean = false;
     private sentCache = new Map<number, number>(); // <illustId, expireTimeMs>
     private readonly cacheTtl = 5 * 60 * 1000; // 5分钟
+    private initPromise: Promise<void> | null = null;
+    private downloadingImages = new Map<string, Promise<string>>();
 
     constructor() {
         this.client = new PixivClient();
@@ -43,24 +45,36 @@ export class PixivService {
      * 初始化并登录 Pixiv
      */
     async init(): Promise<void> {
-        const { pixivRefreshToken } = pluginState.config;
-
-        if (!pixivRefreshToken) {
-            pluginState.logger.warn('Pixiv Refresh Token 未配置，请在 WebUI 设置中配置。');
-            return;
+        if (this.initPromise) {
+            return this.initPromise;
         }
 
+        this.initPromise = (async () => {
+            const { pixivRefreshToken } = pluginState.config;
+
+            if (!pixivRefreshToken) {
+                pluginState.logger.warn('Pixiv Refresh Token 未配置，请在 WebUI 设置中配置。');
+                return;
+            }
+
+            try {
+                this.client = new PixivClient({ camelcaseKeys: true });
+
+                pluginState.logger.info('正在通过 Refresh Token 登录 Pixiv...');
+                await this.client.login(pixivRefreshToken);
+                pluginState.logger.info('Pixiv 登录成功');
+
+                this.isLoggedIn = true;
+            } catch (error) {
+                pluginState.logger.error('Pixiv 登录失败:', error);
+                this.isLoggedIn = false;
+            }
+        })();
+
         try {
-            this.client = new PixivClient({ camelcaseKeys: true });
-
-            pluginState.logger.info('正在通过 Refresh Token 登录 Pixiv...');
-            await this.client.login(pixivRefreshToken);
-            pluginState.logger.info('Pixiv 登录成功');
-
-            this.isLoggedIn = true;
-        } catch (error) {
-            pluginState.logger.error('Pixiv 登录失败:', error);
-            this.isLoggedIn = false;
+            await this.initPromise;
+        } finally {
+            this.initPromise = null;
         }
     }
 
@@ -229,8 +243,11 @@ export class PixivService {
                 if (currentResult.duplicateFiltered > 0) filterParts.push(`近期重复: ${currentResult.duplicateFiltered}`);
                 const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
                 pluginState.logger.info(`搜索 "${keyword}" 第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
-            } catch (error) {
+            } catch (error: any) {
                 pluginState.logger.error('Pixiv 搜索失败:', error);
+                if (error?.response?.status === 400 || error?.response?.status === 401 || error?.response?.status === 403) {
+                    this.isLoggedIn = false;
+                }
                 throw error;
             }
         }
@@ -309,8 +326,11 @@ export class PixivService {
                 if (currentResult.duplicateFiltered > 0) filterParts.push(`近期重复: ${currentResult.duplicateFiltered}`);
                 const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
                 pluginState.logger.info(`推荐第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
-            } catch (error) {
+            } catch (error: any) {
                 pluginState.logger.error('Pixiv 推荐获取失败:', error);
+                if (error?.response?.status === 400 || error?.response?.status === 401 || error?.response?.status === 403) {
+                    this.isLoggedIn = false;
+                }
                 throw error;
             }
         }
@@ -347,22 +367,40 @@ export class PixivService {
             return filePath;
         }
 
-        const maxRetries = 3;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                await pixivImg(imageUrl, filePath);
-                return filePath;
-            } catch (error) {
-                if (attempt < maxRetries) {
-                    pluginState.logger.info(`下载图片失败 ${imageUrl} (第 ${attempt}/${maxRetries} 次尝试)，正在重试...`);
-                } else {
-                    pluginState.logger.error(`下载图片彻底失败 ${imageUrl}:`, error);
-                    throw error;
-                }
-            }
+        // 如果该图片正在下载，则等待它完成，避免重复写同一个文件报错 EBUSY
+        if (this.downloadingImages.has(imageUrl)) {
+            pluginState.logger.debug(`图片 ${imageUrl} 正在下载，等待完成...`);
+            return this.downloadingImages.get(imageUrl)!;
         }
 
-        throw new Error(`下载图片彻底失败 ${imageUrl}`);
+        const downloadPromise = (async () => {
+            const maxRetries = 3;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    // 加入 1.5 分钟超时防卡死
+                    await Promise.race([
+                        pixivImg(imageUrl, filePath),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('图片下载请求超时')), 90000))
+                    ]);
+                    return filePath;
+                } catch (error) {
+                    if (attempt < maxRetries) {
+                        pluginState.logger.info(`下载图片失败 ${imageUrl} (第 ${attempt}/${maxRetries} 次尝试)，正在重试...`);
+                    } else {
+                        pluginState.logger.error(`下载图片彻底失败 ${imageUrl}:`, error);
+                        throw error;
+                    }
+                }
+            }
+            throw new Error(`下载图片彻底失败 ${imageUrl}`);
+        })();
+
+        this.downloadingImages.set(imageUrl, downloadPromise);
+        try {
+            return await downloadPromise;
+        } finally {
+            this.downloadingImages.delete(imageUrl);
+        }
     }
     /**
      * 获取缓存目录信息（文件数量和总大小）
