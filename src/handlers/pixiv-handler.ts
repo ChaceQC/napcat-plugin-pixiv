@@ -92,6 +92,9 @@ async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Messag
     try {
         await sendReply(ctx, event, '🌟 正在获取随机推荐...');
 
+        const now = new Date();
+        const cmdTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
         const result = await pixivService.getRandomTop3();
 
         if (result.illusts.length === 0) {
@@ -111,7 +114,7 @@ async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Messag
 
         const senderName = event.sender?.card || event.sender?.nickname || '未知用户';
         const userId = event.sender?.user_id || event.user_id || '未知QQ号';
-        const nodes = await buildForwardNodes(result.illusts, `🌟 随机推荐 | 来自 ${senderName} (${userId})\n`);
+        const nodes = await buildForwardNodes(result.illusts, `🌟 随机推荐 | 来自 ${senderName} (${userId})\n${cmdTime}\n\n`);
         if (nodes.length === 0) {
             await sendReply(ctx, event, '图片下载失败，请稍后重试。');
             return;
@@ -143,6 +146,9 @@ async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keywor
 
         const result = await pixivService.searchTop3(keyword);
 
+        const now = new Date();
+        const cmdTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
         if (result.illusts.length === 0) {
             const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered + result.duplicateFiltered;
             if (totalFiltered > 0) {
@@ -160,7 +166,7 @@ async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keywor
 
         const senderName = event.sender?.card || event.sender?.nickname || '未知用户';
         const userId = event.sender?.user_id || event.user_id || '未知QQ号';
-        const nodes = await buildForwardNodes(result.illusts, `🔍 搜索: ${keyword} | 来自 ${senderName} (${userId})\n`);
+        const nodes = await buildForwardNodes(result.illusts, `🔍 搜索: ${keyword} | 来自 ${senderName} (${userId})\n${cmdTime}\n\n`);
         if (nodes.length === 0) {
             await sendReply(ctx, event, '图片下载失败，请稍后重试。');
             return;
