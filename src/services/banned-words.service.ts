@@ -153,7 +153,7 @@ class BannedWordsService {
      * 检查插画标题/标签是否命中违禁词
      * @returns 命中的违禁词，未命中返回 null
      */
-    checkIllust(illust: { title?: string; tags?: Array<{ name?: string; translated_name?: string }> }): BannedWord | null {
+    checkIllust(illust: { title?: string; tags?: Array<{ name?: string; translatedName?: string }> }): BannedWord | null {
         // 检查标题
         if (illust.title) {
             const hit = this.matchText(illust.title);
@@ -161,14 +161,17 @@ class BannedWordsService {
         }
         // 检查标签
         if (illust.tags) {
+
+            pluginState.logger.info(illust.tags);
+
             for (const tag of illust.tags) {
                 if (tag.name) {
                     const hit = this.matchText(tag.name);
                     if (hit) return hit;
                 }
 
-                if (tag.translated_name) {
-                    const hit = this.matchText(tag.translated_name);
+                if (tag.translatedName) {
+                    const hit = this.matchText(tag.translatedName);
                     if (hit) return hit;
                 }
             }
