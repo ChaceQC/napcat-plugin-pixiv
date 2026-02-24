@@ -347,13 +347,22 @@ export class PixivService {
             return filePath;
         }
 
-        try {
-            await pixivImg(imageUrl, filePath);
-            return filePath;
-        } catch (error) {
-            pluginState.logger.error(`下载图片失败 ${imageUrl}:`, error);
-            throw error;
+        const maxRetries = 3;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                await pixivImg(imageUrl, filePath);
+                return filePath;
+            } catch (error) {
+                if (attempt < maxRetries) {
+                    pluginState.logger.info(`下载图片失败 ${imageUrl} (第 ${attempt}/${maxRetries} 次尝试)，正在重试...`);
+                } else {
+                    pluginState.logger.error(`下载图片彻底失败 ${imageUrl}:`, error);
+                    throw error;
+                }
+            }
         }
+
+        throw new Error(`下载图片彻底失败 ${imageUrl}`);
     }
     /**
      * 获取缓存目录信息（文件数量和总大小）
