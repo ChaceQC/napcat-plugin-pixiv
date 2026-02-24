@@ -11,10 +11,10 @@ const baseURL = 'https://app-api.pixiv.net/';
 // Updated headers to mimic a more recent app version
 // Using headers similar to recent PixivPy or known working configs
 const headers = {
-    'App-OS': 'ios',
-    'App-OS-Version': '14.6',
-    'App-Version': '7.13.3',
-    'User-Agent': 'PixivIOSApp/7.13.3 (iOS 14.6; iPhone13,2)',
+    'App-OS': 'android',
+    'App-OS-Version': '14.0',
+    'App-Version': '5.146.0',
+    'User-Agent': 'PixivAndroidApp/5.146.0 (Android 14.0; Pixel 8 Pro)',
     'Accept-Language': 'zh-CN',
 };
 
