@@ -72,6 +72,10 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
                 const { registerCacheCleanTimer } = await import('../index');
                 registerCacheCleanTimer();
             }
+            // 代理配置变更时，重新应用代理
+            if ('proxyUrl' in body) {
+                pixivService.reapplyProxy();
+            }
             ctx.logger.info('配置已保存');
             res.json({ code: 0, message: 'ok' });
         } catch (err) {

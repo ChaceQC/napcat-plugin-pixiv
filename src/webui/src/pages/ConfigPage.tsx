@@ -107,6 +107,12 @@ export default function ConfigPage() {
                         value={config.pixivRefreshToken || ''}
                         onChange={(v) => updateField('pixivRefreshToken', v)}
                     />
+                    <InputRow
+                        label="代理地址"
+                        desc="HTTP/HTTPS/SOCKS5 代理，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080，留空不使用"
+                        value={config.proxyUrl || ''}
+                        onChange={(v) => updateField('proxyUrl', v)}
+                    />
                     <ToggleRow
                         label="含敏感内容的作品"
                         desc="允许 sanity_level ≥ 4 的含敏感内容作品，关闭后同步关闭 R-18"

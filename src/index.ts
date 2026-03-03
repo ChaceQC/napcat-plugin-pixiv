@@ -94,9 +94,6 @@ export const plugin_init: PluginModule['plugin_init'] = async (ctx) => {
         // 4. 注册 API 路由
         registerApiRoutes(ctx);
 
-        // 5. Initialize Pixiv Service
-        await pixivService.init();
-
         // 6. 注册缓存自动清理定时器
         registerCacheCleanTimer();
 
@@ -143,8 +140,7 @@ export const plugin_get_config: PluginModule['plugin_get_config'] = async (ctx) 
 /** 设置配置（完整替换，由 NapCat WebUI 调用） */
 export const plugin_set_config: PluginModule['plugin_set_config'] = async (ctx, config) => {
     pluginState.replaceConfig(config as PluginConfig);
-    ctx.logger.info('配置已通过 WebUI 更新，正在重新初始化 Pixiv 服务...');
-    await pixivService.init();
+    ctx.logger.info('配置已通过 WebUI 更新');
     // 重建缓存清理定时器（配置可能变更了间隔）
     registerCacheCleanTimer();
 };
@@ -159,9 +155,7 @@ export const plugin_on_config_change: PluginModule['plugin_on_config_change'] = 
     try {
         pluginState.updateConfig({ [key]: value });
         ctx.logger.debug(`配置项 ${key} 已更新`);
-        if (['pixivRefreshToken', 'r18Enabled'].includes(key)) {
-            await pixivService.init();
-        }
+
         if (key === 'cooldownSeconds') {
             clearCooldownMap();
             ctx.logger.info(`冷却时间已更新为 ${value} 秒，已重置所有冷却`);

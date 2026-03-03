@@ -36,6 +36,8 @@ export interface PluginConfig {
     resultCount?: number;
     /** 缓存自动清理间隔（分钟），默认 30，0 表示禁用 */
     cacheAutoCleanMinutes?: number;
+    /** 代理地址，支持 http/https/socks5，如 http://127.0.0.1:7890，留空不使用代理 */
+    proxyUrl?: string;
     /** 按群的单独配置 */
     groupConfigs: Record<string, GroupConfig>;
 }

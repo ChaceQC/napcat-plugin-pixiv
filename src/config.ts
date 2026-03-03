@@ -21,6 +21,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
     searchSort: 'date_desc',
     resultCount: 3,
     cacheAutoCleanMinutes: 30,
+    proxyUrl: '',
 };
 
 /**

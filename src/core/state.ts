@@ -67,7 +67,8 @@ function sanitizeConfig(raw: unknown): PluginConfig {
         const n = Number(raw.cacheAutoCleanMinutes);
         if (!isNaN(n) && n >= 0) out.cacheAutoCleanMinutes = n;
     }
-
+    // proxyUrl 校验
+    if (typeof raw.proxyUrl === 'string') out.proxyUrl = raw.proxyUrl.trim();
 
     // 群配置清洗
     if (isObject(raw.groupConfigs)) {

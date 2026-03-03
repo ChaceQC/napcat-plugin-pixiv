@@ -23,9 +23,10 @@
     "homepage": "https://github.com/ChaceQC/napcat-plugin-pixiv"
   },
   "dependencies": {
+    "https-proxy-agent": "^7.0.6",
     "napcat-types": "0.0.16",
     "pixiv-app-api": "^1.2.1",
-    "pixiv-img": "^1.0.0"
+    "socks-proxy-agent": "^8.0.5"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^15.3.1",

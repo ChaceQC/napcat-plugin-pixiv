@@ -25,6 +25,7 @@ export interface PluginConfig {
     searchSort?: 'date_desc' | 'date_asc' | 'popular_desc'
     resultCount?: number
     cacheAutoCleanMinutes?: number
+    proxyUrl?: string
     groupConfigs?: Record<string, GroupConfig>
 }
 

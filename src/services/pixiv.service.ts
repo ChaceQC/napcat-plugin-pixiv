@@ -1,5 +1,5 @@
 import { PixivClient } from '../lib/pixiv-client';
-import pixivImg from 'pixiv-img';
+import axios from 'axios';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -60,6 +60,10 @@ export class PixivService {
             try {
                 this.client = new PixivClient({ camelcaseKeys: true });
 
+                // 应用代理配置
+                const { proxyUrl } = pluginState.config;
+                this.client.applyProxy(proxyUrl);
+
                 pluginState.logger.info('正在通过 Refresh Token 登录 Pixiv...');
                 await this.client.login(pixivRefreshToken);
                 pluginState.logger.info('Pixiv 登录成功');
@@ -86,6 +90,14 @@ export class PixivService {
             await this.init();
             if (!this.isLoggedIn) throw new Error('Pixiv 登录失败，请检查凭据配置。');
         }
+    }
+
+    /**
+     * 重新应用代理配置（配置变更时调用）
+     */
+    reapplyProxy(): void {
+        const { proxyUrl } = pluginState.config;
+        this.client.applyProxy(proxyUrl);
     }
 
     /**
@@ -377,11 +389,23 @@ export class PixivService {
             const maxRetries = 3;
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
-                    // 加入 1.5 分钟超时防卡死
-                    await Promise.race([
-                        pixivImg(imageUrl, filePath),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('图片下载请求超时')), 90000))
-                    ]);
+                    // 使用 axios 流式下载，支持代理
+                    const proxyAgent = this.client.getProxyAgent();
+                    const response = await axios({
+                        url: imageUrl,
+                        method: 'GET',
+                        responseType: 'stream',
+                        timeout: 90000,
+                        headers: { Referer: 'http://www.pixiv.net/' },
+                        httpAgent: proxyAgent,
+                        httpsAgent: proxyAgent,
+                    });
+                    const writer = fs.createWriteStream(filePath);
+                    response.data.pipe(writer);
+                    await new Promise<void>((resolve, reject) => {
+                        writer.on('close', resolve);
+                        writer.on('error', reject);
+                    });
                     return filePath;
                 } catch (error) {
                     if (attempt < maxRetries) {
