@@ -13,6 +13,13 @@ import { sendReply, sendForwardMsg, ForwardNode } from './message-handler';
 import { pluginState } from '../core/state';
 import { bannedWordsService } from '../services/banned-words.service';
 
+/** 格式化当前时间为 yyyy-MM-dd HH:mm:ss */
+function formatDateTime(): string {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 export async function handlePixivCommand(
     ctx: NapCatPluginContext,
     event: OB11Message,
@@ -71,7 +78,8 @@ async function buildForwardNodes(illusts: SafeIllust[], title: string): Promise<
         });
     }
 
-    if (content.length === 0) {
+    if (content.length <= 1) {
+        // 只有标题文本节点，没有图片被成功加入
         return [];
     }
 
@@ -88,14 +96,22 @@ async function buildForwardNodes(illusts: SafeIllust[], title: string): Promise<
     return [node];
 }
 
-async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Message) {
+/**
+ * 通用 Pixiv 获取并发送处理
+ */
+async function handlePixivFetch(
+    ctx: NapCatPluginContext,
+    event: OB11Message,
+    options: {
+        fetchFn: () => Promise<ExtractResult>;
+        loadingMsg: string;
+        titlePrefix: string;
+        errorLabel: string;
+    },
+): Promise<void> {
     try {
-        await sendReply(ctx, event, '🌟 正在获取随机推荐...');
-
-        const now = new Date();
-        const cmdTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-        const result = await pixivService.getRandomTop3();
+        await sendReply(ctx, event, options.loadingMsg);
+        const result = await options.fetchFn();
 
         if (result.illusts.length === 0) {
             const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered + result.duplicateFiltered;
@@ -105,68 +121,17 @@ async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Messag
                 if (result.sensitiveFiltered > 0) parts.push(`敏感: ${result.sensitiveFiltered}`);
                 if (result.bannedFiltered > 0) parts.push(`违禁词: ${result.bannedFiltered}`);
                 if (result.duplicateFiltered > 0) parts.push(`近期重复: ${result.duplicateFiltered}`);
-                await sendReply(ctx, event, `🔞 推荐内容均为限制级内容或近期已发送过（已过滤 ${parts.join('、')}），换个时间再试试吧~`);
-            } else {
-                await sendReply(ctx, event, '未找到推荐内容。');
-            }
-            return;
-        }
-
-        const senderName = event.sender?.card || event.sender?.nickname || '未知用户';
-        const userId = event.sender?.user_id || event.user_id || '未知QQ号';
-        const nodes = await buildForwardNodes(result.illusts, `🌟 随机推荐 | 来自 ${senderName} (${userId})\n${cmdTime}\n\n`);
-        if (nodes.length === 0) {
-            await sendReply(ctx, event, '图片下载失败，请稍后重试。');
-            return;
-        }
-
-        const isGroup = event.message_type === 'group';
-        const target = isGroup ? event.group_id! : event.user_id;
-        const ok = await sendForwardMsg(ctx, target, isGroup, nodes);
-        if (!ok) {
-            await sendReply(ctx, event, '⚠️ 合并转发消息发送失败，请稍后重试。');
-        }
-    } catch (error) {
-        pluginState.logger.error('Pixiv 随机推荐错误:', error);
-        await sendReply(ctx, event, `获取推荐失败: ${error instanceof Error ? error.message : '未知错误'}`);
-    }
-}
-
-async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keyword: string) {
-    try {
-        // 违禁词关键词拦截
-        const bannedHit = bannedWordsService.checkKeyword(keyword);
-        if (bannedHit) {
-            pluginState.logger.info(`[违禁词] 搜索关键词 "${keyword}" 命中违禁词: "${bannedHit.pattern}" (${bannedHit.matchType})`);
-            await sendReply(ctx, event, `🚫 搜索关键词包含违禁内容，已拒绝搜索。`);
-            return;
-        }
-
-        await sendReply(ctx, event, `🔍 正在搜索: ${keyword}...`);
-
-        const result = await pixivService.searchTop3(keyword);
-
-        const now = new Date();
-        const cmdTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-        if (result.illusts.length === 0) {
-            const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered + result.duplicateFiltered;
-            if (totalFiltered > 0) {
-                const parts: string[] = [];
-                if (result.r18Filtered > 0) parts.push(`R-18: ${result.r18Filtered}`);
-                if (result.sensitiveFiltered > 0) parts.push(`敏感: ${result.sensitiveFiltered}`);
-                if (result.bannedFiltered > 0) parts.push(`违禁词: ${result.bannedFiltered}`);
-                if (result.duplicateFiltered > 0) parts.push(`近期重复: ${result.duplicateFiltered}`);
-                await sendReply(ctx, event, `🔞 「${keyword}」的搜索结果均为限制级内容或近期已发送过（已过滤 ${parts.join('、')}），请尝试其他关键词~`);
+                await sendReply(ctx, event, `🔞 结果均为限制级内容或近期已发送过（已过滤 ${parts.join('、')}），换个时间再试试吧~`);
             } else {
                 await sendReply(ctx, event, '未找到相关内容。');
             }
             return;
         }
 
+        const cmdTime = formatDateTime();
         const senderName = event.sender?.card || event.sender?.nickname || '未知用户';
         const userId = event.sender?.user_id || event.user_id || '未知QQ号';
-        const nodes = await buildForwardNodes(result.illusts, `🔍 搜索: ${keyword} | 来自 ${senderName} (${userId})\n${cmdTime}\n\n`);
+        const nodes = await buildForwardNodes(result.illusts, `${options.titlePrefix} | 来自 ${senderName} (${userId})\n${cmdTime}\n\n`);
         if (nodes.length === 0) {
             await sendReply(ctx, event, '图片下载失败，请稍后重试。');
             return;
@@ -179,7 +144,33 @@ async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keywor
             await sendReply(ctx, event, '⚠️ 合并转发消息发送失败，请稍后重试。');
         }
     } catch (error) {
-        pluginState.logger.error('Pixiv 搜索错误:', error);
-        await sendReply(ctx, event, `搜索失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        pluginState.logger.error(`Pixiv ${options.errorLabel}错误:`, error);
+        await sendReply(ctx, event, `${options.errorLabel}失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
+}
+
+async function handleRandomRecommend(ctx: NapCatPluginContext, event: OB11Message) {
+    await handlePixivFetch(ctx, event, {
+        fetchFn: () => pixivService.getRandomTop3(),
+        loadingMsg: '🌟 正在获取随机推荐...',
+        titlePrefix: '🌟 随机推荐',
+        errorLabel: '获取推荐',
+    });
+}
+
+async function handleSearch(ctx: NapCatPluginContext, event: OB11Message, keyword: string) {
+    // 违禁词关键词拦截
+    const bannedHit = bannedWordsService.checkKeyword(keyword);
+    if (bannedHit) {
+        pluginState.logger.info(`[违禁词] 搜索关键词 "${keyword}" 命中违禁词: "${bannedHit.pattern}" (${bannedHit.matchType})`);
+        await sendReply(ctx, event, `🚫 搜索关键词包含违禁内容，已拒绝搜索。`);
+        return;
+    }
+
+    await handlePixivFetch(ctx, event, {
+        fetchFn: () => pixivService.searchTop3(keyword),
+        loadingMsg: `🔍 正在搜索: ${keyword}...`,
+        titlePrefix: `🔍 搜索: ${keyword}`,
+        errorLabel: '搜索',
+    });
 }

@@ -22,6 +22,7 @@ import type {
     PluginHttpResponse
 } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { pluginState } from '../core/state';
+import { clearCooldownMapFn, registerCacheCleanTimerFn } from '../core/shared';
 import { bannedWordsService } from './banned-words.service';
 import { pixivService } from './pixiv.service';
 import type { BannedWordMatchType } from '../types';
@@ -65,12 +66,10 @@ export function registerApiRoutes(ctx: NapCatPluginContext): void {
             pluginState.updateConfig(body as Partial<import('../types').PluginConfig>);
             // 如果冷却时间被更新，清空冷却记录使其立刻生效
             if ('cooldownSeconds' in body) {
-                const { clearCooldownMap } = await import('../handlers/message-handler');
-                clearCooldownMap();
+                clearCooldownMapFn?.();
             }
             if ('cacheAutoCleanMinutes' in body) {
-                const { registerCacheCleanTimer } = await import('../index');
-                registerCacheCleanTimer();
+                registerCacheCleanTimerFn?.();
             }
             // 代理配置变更时，重新应用代理
             if ('proxyUrl' in body) {

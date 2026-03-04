@@ -14,6 +14,7 @@ const DATA_FILE = 'banned-words.json';
 class BannedWordsService {
     private words: BannedWord[] = [];
     private loaded = false;
+    private regexCache = new Map<string, RegExp>(); // 预编译的正则缓存
 
     /** 确保数据已加载 */
     private ensureLoaded(): void {
@@ -62,6 +63,10 @@ class BannedWordsService {
             enabled: true,
             createdAt: Date.now(),
         };
+        // 预编译正则
+        if (matchType === 'regex') {
+            this.regexCache.set(word.id, new RegExp(pattern, 'i'));
+        }
         this.words.push(word);
         this.save();
         pluginState.logger.info(`[违禁词] 添加: "${pattern}" (${matchType})`);
@@ -89,6 +94,13 @@ class BannedWordsService {
         if (updates.matchType !== undefined) word.matchType = updates.matchType;
         if (updates.enabled !== undefined) word.enabled = updates.enabled;
 
+        // 更新正则缓存
+        if (word.matchType === 'regex') {
+            this.regexCache.set(word.id, new RegExp(word.pattern, 'i'));
+        } else {
+            this.regexCache.delete(word.id);
+        }
+
         this.save();
         return word;
     }
@@ -100,6 +112,7 @@ class BannedWordsService {
         if (idx === -1) return false;
 
         const removed = this.words.splice(idx, 1)[0];
+        this.regexCache.delete(removed.id);
         this.save();
         pluginState.logger.info(`[违禁词] 删除: "${removed.pattern}"`);
         return true;
@@ -129,7 +142,7 @@ class BannedWordsService {
                         if (lowerText.includes(word.pattern.toLowerCase())) return word;
                         break;
                     case 'regex': {
-                        const regex = new RegExp(word.pattern, 'i');
+                        const regex = this.regexCache.get(word.id) ?? new RegExp(word.pattern, 'i');
                         if (regex.test(text)) return word;
                         break;
                     }
@@ -161,21 +174,15 @@ class BannedWordsService {
         }
         // 检查标签
         if (illust.tags) {
-
-            // pluginState.logger.info(illust.tags);
-
             for (const tag of illust.tags) {
                 if (tag.name) {
                     const hit = this.matchText(tag.name);
                     if (hit) return hit;
                 }
-
                 if (tag.translatedName) {
                     const hit = this.matchText(tag.translatedName);
                     if (hit) return hit;
                 }
-
-                // pluginState.logger.info(tag.name, tag.translatedName);
             }
         }
         return null;

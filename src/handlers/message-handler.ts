@@ -83,7 +83,7 @@ export function clearCooldownMap(): void {
 }
 
 /**
- * 检查冗却并回复
+ * 检查冷却并回复
  * @returns true 表示在冷却中，已自动回复提示信息
  */
 async function checkCooldownAndReply(

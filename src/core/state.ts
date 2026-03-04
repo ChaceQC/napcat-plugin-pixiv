@@ -259,8 +259,8 @@ class PluginState {
     }
 
     /**
- * 合并更新配置
- */
+     * 合并更新配置
+     */
     updateConfig(partial: Partial<PluginConfig>): void {
         const merged = { ...this.config, ...partial };
         this.config = sanitizeConfig(merged);

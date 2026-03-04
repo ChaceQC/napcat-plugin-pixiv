@@ -29,6 +29,7 @@ import { EventType } from 'napcat-types/napcat-onebot/event/index';
 
 import { buildConfigSchema } from './config';
 import { pluginState } from './core/state';
+import { setRegisterCacheCleanTimer, setClearCooldownMap } from './core/shared';
 import { handleMessage, clearCooldownMap } from './handlers/message-handler';
 import { registerApiRoutes } from './services/api-service';
 import { pixivService } from './services/pixiv.service';
@@ -83,6 +84,10 @@ export const plugin_init: PluginModule['plugin_init'] = async (ctx) => {
         // 1. 初始化全局状态（加载配置）
         pluginState.init(ctx);
 
+        // 注册共享函数引用（消除循环依赖）
+        setRegisterCacheCleanTimer(registerCacheCleanTimer);
+        setClearCooldownMap(clearCooldownMap);
+
         ctx.logger.info('插件初始化中...');
 
         // 2. 生成配置 Schema（用于 NapCat WebUI 配置面板）
@@ -94,7 +99,7 @@ export const plugin_init: PluginModule['plugin_init'] = async (ctx) => {
         // 4. 注册 API 路由
         registerApiRoutes(ctx);
 
-        // 6. 注册缓存自动清理定时器
+        // 5. 注册缓存自动清理定时器
         registerCacheCleanTimer();
 
         ctx.logger.info('插件初始化完成');

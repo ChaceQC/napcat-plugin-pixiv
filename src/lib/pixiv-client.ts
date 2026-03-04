@@ -131,7 +131,7 @@ export class PixivClient {
 
                 return this.camelcaseKeys ? camelcaseKeys(this.auth, { deep: true }) : this.auth;
             } catch (error: any) {
-                console.error('Pixiv Login Error Details:', error.response?.data || error.message);
+                pluginState.logger.error('Pixiv Login Error Details:', error.response?.data || error.message);
                 throw error;
             } finally {
                 this.loginPromise = null;
@@ -176,7 +176,7 @@ export class PixivClient {
 
                 // access_token 过期（Pixiv OAuth 通常 1 小时过期），自动刷新并重试
                 if ((status === 400 || status === 403 || status === 401) && this.refreshToken) {
-                    console.log('[PixivClient] access_token 已过期，正在使用 refresh_token 重新获取...');
+                    pluginState.logger.info('[PixivClient] access_token 已过期，正在使用 refresh_token 重新获取...');
                     await this.login(this.refreshToken);
                     return await this._request(url, options);
                 }
@@ -195,7 +195,7 @@ export class PixivClient {
 
                 if (isNetworkError && attempt < maxRetries) {
                     const delay = attempt * 2000; // 递增延迟：2s, 4s
-                    console.log(`[PixivClient] 请求 ${url} 网络错误 (${error.code || error.message})，${delay / 1000}s 后重试 (${attempt}/${maxRetries})...`);
+                    pluginState.logger.info(`[PixivClient] 请求 ${url} 网络错误 (${error.code || error.message})，${delay / 1000}s 后重试 (${attempt}/${maxRetries})...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     continue;
                 }
