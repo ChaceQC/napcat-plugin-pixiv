@@ -34,8 +34,12 @@ export class PixivService {
     private isLoggedIn: boolean = false;
     private sentCache = new Map<number, number>(); // <illustId, expireTimeMs>
     private readonly cacheTtl = 5 * 60 * 1000; // 5分钟
+    private readonly sentCacheMaxSize = 1000;
     private initPromise: Promise<void> | null = null;
     private downloadingImages = new Map<string, Promise<string>>();
+    private lastLoginFailTime = 0;
+    private readonly loginCooldown = 60 * 1000; // 登录失败后冷却 60 秒
+    private readonly cacheDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
 
     constructor() {
         this.client = new PixivClient();
@@ -47,6 +51,11 @@ export class PixivService {
     async init(): Promise<void> {
         if (this.initPromise) {
             return this.initPromise;
+        }
+
+        // 登录失败冷却期内不再重试，避免频繁无效请求
+        if (this.lastLoginFailTime > 0 && Date.now() - this.lastLoginFailTime < this.loginCooldown) {
+            throw new Error(`Pixiv 登录失败冷却中，请 ${Math.ceil((this.loginCooldown - (Date.now() - this.lastLoginFailTime)) / 1000)} 秒后重试`);
         }
 
         this.initPromise = (async () => {
@@ -69,9 +78,11 @@ export class PixivService {
                 pluginState.logger.info('Pixiv 登录成功');
 
                 this.isLoggedIn = true;
+                this.lastLoginFailTime = 0;
             } catch (error) {
                 pluginState.logger.error('Pixiv 登录失败:', error);
                 this.isLoggedIn = false;
+                this.lastLoginFailTime = Date.now();
             }
         })();
 
@@ -121,6 +132,14 @@ export class PixivService {
         for (const [id, expireTime] of this.sentCache.entries()) {
             if (now > expireTime) {
                 this.sentCache.delete(id);
+            }
+        }
+        // 防止 sentCache 无限增长
+        if (this.sentCache.size > this.sentCacheMaxSize) {
+            const excess = this.sentCache.size - this.sentCacheMaxSize;
+            const iter = this.sentCache.keys();
+            for (let i = 0; i < excess; i++) {
+                this.sentCache.delete(iter.next().value!);
             }
         }
 
@@ -185,15 +204,21 @@ export class PixivService {
     }
 
     /**
-     * 搜索关键词并返回前 3 个安全作品
-     * 参照 main.py 的 search_illust + _extract_and_download_top_3
+     * 通用的带重试的数据获取方法
+     * 将 searchTop3 和 getRandomTop3 中的公共逻辑抽取出来
      */
-    async searchTop3(keyword: string): Promise<ExtractResult> {
+    private async fetchWithRetry(
+        fetcher: (attempt: number) => Promise<{ illusts: any[] }>,
+        options: {
+            maxRetries: number;
+            label: string;
+            shouldBreakOnEmpty?: (illusts: any[], currentResult: ExtractResult) => boolean;
+        },
+    ): Promise<ExtractResult> {
         await this.ensureLoggedIn();
 
-        const maxRetries = 5;
+        const { maxRetries, label } = options;
         const requiredCount = pluginState.config.resultCount ?? 3;
-        // 累积池：按 ID 去重叠加
         const collectedMap = new Map<number, SafeIllust>();
         let totalScanned = 0;
         let totalR18Filtered = 0;
@@ -201,20 +226,9 @@ export class PixivService {
         let totalBannedFiltered = 0;
         let totalDuplicateFiltered = 0;
 
-        // offset 上限仅在 API 真的返回空结果时递减，过滤导致的不足不缩小范围
-        const offsetLimits = [300, 200, 100, 50, 0];
-        let offsetLevel = 0;
-
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                const maxOffset = offsetLimits[Math.min(offsetLevel, offsetLimits.length - 1)];
-                const randomOffset = maxOffset > 0 ? Math.floor(Math.random() * (maxOffset + 1)) : 0;
-                pluginState.logger.debug(`搜索 "${keyword}"，随机偏移: ${randomOffset}（第 ${attempt + 1} 次尝试，偏移上限: ${maxOffset}）`);
-
-                const result = await this.client.searchIllust(keyword, {
-                    offset: randomOffset,
-                });
-
+                const result = await fetcher(attempt);
                 const illusts = result.illusts || [];
                 const currentResult = this.extractTopSafe(illusts, true);
 
@@ -233,101 +247,12 @@ export class PixivService {
                 // 已满足数量要求，直接返回
                 if (collectedMap.size >= requiredCount) {
                     const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    // 记录发送的图片到近期缓存
-                    const now = Date.now();
-                    for (const illust of collected) {
-                        this.sentCache.set(illust.id, now + this.cacheTtl);
-                    }
+                    this.recordSentCache(collected);
                     return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
                 }
 
-                // API 返回空结果（非过滤导致）→ 缩小偏移范围
-                if (illusts.length === 0) {
-                    offsetLevel++;
-                    // 已用最小偏移仍为空，真的没结果
-                    if (maxOffset === 0) break;
-                }
-
-                const filterParts: string[] = [];
-                if (currentResult.r18Filtered > 0) filterParts.push(`R-18: ${currentResult.r18Filtered}`);
-                if (currentResult.sensitiveFiltered > 0) filterParts.push(`敏感: ${currentResult.sensitiveFiltered}`);
-                if (currentResult.bannedFiltered > 0) filterParts.push(`违禁词: ${currentResult.bannedFiltered}`);
-                if (currentResult.duplicateFiltered > 0) filterParts.push(`近期重复: ${currentResult.duplicateFiltered}`);
-                const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
-                pluginState.logger.info(`搜索 "${keyword}" 第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
-            } catch (error: any) {
-                pluginState.logger.error('Pixiv 搜索失败:', error);
-                if (error?.response?.status === 400 || error?.response?.status === 401 || error?.response?.status === 403) {
-                    this.isLoggedIn = false;
-                }
-                throw error;
-            }
-        }
-
-        const finalIllusts = Array.from(collectedMap.values()).slice(0, requiredCount);
-        if (finalIllusts.length > 0 && finalIllusts.length < requiredCount) {
-            pluginState.logger.info(`搜索 "${keyword}" 重试 ${maxRetries} 次后累计获取 ${finalIllusts.length}/${requiredCount} 张，将发送已有结果`);
-        } else if (finalIllusts.length === 0) {
-            pluginState.logger.info(`搜索 "${keyword}" 重试 ${maxRetries} 次后仍无安全结果`);
-        }
-        // 记录发送的图片到近期缓存
-        const now = Date.now();
-        for (const illust of finalIllusts) {
-            this.sentCache.set(illust.id, now + this.cacheTtl);
-        }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
-    }
-
-    /**
-     * 获取推荐流并返回前 3 个安全作品
-     * 参照 main.py 的 get_recommended + _extract_and_download_top_3
-     */
-    async getRandomTop3(): Promise<ExtractResult> {
-        await this.ensureLoggedIn();
-
-        const maxRetries = 3;
-        const requiredCount = pluginState.config.resultCount ?? 3;
-        // 累积池：按 ID 去重叠加
-        const collectedMap = new Map<number, SafeIllust>();
-        let totalScanned = 0;
-        let totalR18Filtered = 0;
-        let totalSensitiveFiltered = 0;
-        let totalBannedFiltered = 0;
-        let totalDuplicateFiltered = 0;
-
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-            try {
-                const result = await this.client.illustRecommended();
-                const illusts = result.illusts || [];
-                // 推荐流本身有动态性，加上本地打乱效果更好
-                const currentResult = this.extractTopSafe(illusts, true);
-
-                // 去重叠加到累积池
-                for (const illust of currentResult.illusts) {
-                    if (!collectedMap.has(illust.id)) {
-                        collectedMap.set(illust.id, illust);
-                    }
-                }
-                totalScanned += currentResult.totalScanned;
-                totalR18Filtered += currentResult.r18Filtered;
-                totalSensitiveFiltered += currentResult.sensitiveFiltered;
-                totalBannedFiltered += currentResult.bannedFiltered;
-                totalDuplicateFiltered += currentResult.duplicateFiltered;
-
-                // 已满足数量要求，直接返回
-                if (collectedMap.size >= requiredCount) {
-                    const collected = Array.from(collectedMap.values()).slice(0, requiredCount);
-                    // 记录发送的图片到近期缓存
-                    const now = Date.now();
-                    for (const illust of collected) {
-                        this.sentCache.set(illust.id, now + this.cacheTtl);
-                    }
-                    return { illusts: collected, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
-                }
-
-                // 没有任何结果且不是过滤导致的，说明真的没结果
-                const totalFiltered = currentResult.r18Filtered + currentResult.sensitiveFiltered + currentResult.bannedFiltered + currentResult.duplicateFiltered;
-                if (currentResult.illusts.length === 0 && totalFiltered === 0) {
+                // 检查是否应提前终止
+                if (options.shouldBreakOnEmpty?.(illusts, currentResult)) {
                     break;
                 }
 
@@ -337,9 +262,9 @@ export class PixivService {
                 if (currentResult.bannedFiltered > 0) filterParts.push(`违禁词: ${currentResult.bannedFiltered}`);
                 if (currentResult.duplicateFiltered > 0) filterParts.push(`近期重复: ${currentResult.duplicateFiltered}`);
                 const filterInfo = filterParts.length > 0 ? `（本次过滤 ${filterParts.join('、')}）` : '';
-                pluginState.logger.info(`推荐第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
+                pluginState.logger.info(`${label}第 ${attempt + 1} 次累计获取 ${collectedMap.size}/${requiredCount} 张${filterInfo}，重试中...`);
             } catch (error: any) {
-                pluginState.logger.error('Pixiv 推荐获取失败:', error);
+                pluginState.logger.error(`Pixiv ${label}失败:`, error);
                 if (error?.response?.status === 400 || error?.response?.status === 401 || error?.response?.status === 403) {
                     this.isLoggedIn = false;
                 }
@@ -349,16 +274,69 @@ export class PixivService {
 
         const finalIllusts = Array.from(collectedMap.values()).slice(0, requiredCount);
         if (finalIllusts.length > 0 && finalIllusts.length < requiredCount) {
-            pluginState.logger.info(`推荐重试 ${maxRetries} 次后累计获取 ${finalIllusts.length}/${requiredCount} 张，将发送已有结果`);
+            pluginState.logger.info(`${label}重试 ${maxRetries} 次后累计获取 ${finalIllusts.length}/${requiredCount} 张，将发送已有结果`);
         } else if (finalIllusts.length === 0) {
-            pluginState.logger.info(`推荐重试 ${maxRetries} 次后仍无安全结果`);
+            pluginState.logger.info(`${label}重试 ${maxRetries} 次后仍无安全结果`);
         }
-        // 记录发送的图片到近期缓存
+        this.recordSentCache(finalIllusts);
+        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
+    }
+
+    /** 记录已发送图片到近期缓存 */
+    private recordSentCache(illusts: SafeIllust[]): void {
         const now = Date.now();
-        for (const illust of finalIllusts) {
+        for (const illust of illusts) {
             this.sentCache.set(illust.id, now + this.cacheTtl);
         }
-        return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
+    }
+
+    /**
+     * 搜索关键词并返回前 N 个安全作品
+     * 参照 main.py 的 search_illust + _extract_and_download_top_3
+     */
+    async searchTop3(keyword: string): Promise<ExtractResult> {
+        // offset 上限仅在 API 真的返回空结果时递减，过滤导致的不足不缩小范围
+        const offsetLimits = [300, 200, 100, 50, 0];
+        let offsetLevel = 0;
+
+        return this.fetchWithRetry(
+            async (attempt) => {
+                const maxOffset = offsetLimits[Math.min(offsetLevel, offsetLimits.length - 1)];
+                const randomOffset = maxOffset > 0 ? Math.floor(Math.random() * (maxOffset + 1)) : 0;
+                pluginState.logger.debug(`搜索 "${keyword}"，随机偏移: ${randomOffset}（第 ${attempt + 1} 次尝试，偏移上限: ${maxOffset}）`);
+                return this.client.searchIllust(keyword, { offset: randomOffset });
+            },
+            {
+                maxRetries: 5,
+                label: `搜索 "${keyword}" `,
+                shouldBreakOnEmpty: (illusts) => {
+                    if (illusts.length === 0) {
+                        const maxOffset = offsetLimits[Math.min(offsetLevel, offsetLimits.length - 1)];
+                        offsetLevel++;
+                        if (maxOffset === 0) return true; // 已用最小偏移仍为空
+                    }
+                    return false;
+                },
+            },
+        );
+    }
+
+    /**
+     * 获取推荐流并返回前 N 个安全作品
+     * 参照 main.py 的 get_recommended + _extract_and_download_top_3
+     */
+    async getRandomTop3(): Promise<ExtractResult> {
+        return this.fetchWithRetry(
+            async () => this.client.illustRecommended(),
+            {
+                maxRetries: 3,
+                label: '推荐',
+                shouldBreakOnEmpty: (illusts, currentResult) => {
+                    const totalFiltered = currentResult.r18Filtered + currentResult.sensitiveFiltered + currentResult.bannedFiltered + currentResult.duplicateFiltered;
+                    return currentResult.illusts.length === 0 && totalFiltered === 0;
+                },
+            },
+        );
     }
 
     /**
@@ -366,13 +344,13 @@ export class PixivService {
      * @returns 本地绝对路径
      */
     async downloadImage(imageUrl: string): Promise<string> {
-        const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
-        if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
+        if (!fs.existsSync(this.cacheDir)) {
+            fs.mkdirSync(this.cacheDir, { recursive: true });
         }
 
         const fileName = path.basename(imageUrl);
-        const filePath = path.join(tempDir, fileName);
+        const filePath = path.join(this.cacheDir, fileName);
+        const tmpPath = filePath + '.tmp';
 
         // 简单缓存：已存在则跳过
         if (fs.existsSync(filePath)) {
@@ -400,14 +378,19 @@ export class PixivService {
                         httpAgent: proxyAgent,
                         httpsAgent: proxyAgent,
                     });
-                    const writer = fs.createWriteStream(filePath);
+                    const writer = fs.createWriteStream(tmpPath);
                     response.data.pipe(writer);
                     await new Promise<void>((resolve, reject) => {
-                        writer.on('close', resolve);
+                        response.data.on('error', reject); // 监听 readable stream 错误
                         writer.on('error', reject);
+                        writer.on('close', resolve);
                     });
+                    // 下载完成后重命名，避免残留不完整文件
+                    fs.renameSync(tmpPath, filePath);
                     return filePath;
                 } catch (error) {
+                    // 清理可能残留的临时文件
+                    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch { /* ignore */ }
                     if (attempt < maxRetries) {
                         pluginState.logger.info(`下载图片失败 ${imageUrl} (第 ${attempt}/${maxRetries} 次尝试)，正在重试...`);
                     } else {
@@ -430,16 +413,15 @@ export class PixivService {
      * 获取缓存目录信息（文件数量和总大小）
      */
     getCacheInfo(): { fileCount: number; totalSizeBytes: number; totalSizeFormatted: string } {
-        const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
         let fileCount = 0;
         let totalSizeBytes = 0;
 
         try {
-            if (fs.existsSync(tempDir)) {
-                const files = fs.readdirSync(tempDir);
+            if (fs.existsSync(this.cacheDir)) {
+                const files = fs.readdirSync(this.cacheDir);
                 for (const file of files) {
                     try {
-                        const stat = fs.statSync(path.join(tempDir, file));
+                        const stat = fs.statSync(path.join(this.cacheDir, file));
                         if (stat.isFile()) {
                             fileCount++;
                             totalSizeBytes += stat.size;
@@ -457,17 +439,16 @@ export class PixivService {
      * @returns 清理的文件数量
      */
     smartCleanupCache(): number {
-        const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
         const protectMs = 5 * 60 * 1000; // 5 分钟保护期
         const now = Date.now();
         let cleaned = 0;
 
         try {
-            if (!fs.existsSync(tempDir)) return 0;
+            if (!fs.existsSync(this.cacheDir)) return 0;
 
-            const files = fs.readdirSync(tempDir);
+            const files = fs.readdirSync(this.cacheDir);
             for (const file of files) {
-                const filePath = path.join(tempDir, file);
+                const filePath = path.join(this.cacheDir, file);
                 try {
                     const stat = fs.statSync(filePath);
                     if (!stat.isFile()) continue;
@@ -497,10 +478,9 @@ export class PixivService {
      * 全量清理缓存目录（插件卸载时使用）
      */
     cleanupCacheAll(): void {
-        const tempDir = path.join(os.tmpdir(), 'napcat-pixiv-plugin');
         try {
-            if (fs.existsSync(tempDir)) {
-                fs.rmSync(tempDir, { recursive: true, force: true });
+            if (fs.existsSync(this.cacheDir)) {
+                fs.rmSync(this.cacheDir, { recursive: true, force: true });
                 pluginState.logger.info('已全量清理临时图片缓存目录');
             }
         } catch (error) {
@@ -512,7 +492,7 @@ export class PixivService {
     private formatBytes(bytes: number): string {
         if (bytes === 0) return '0 B';
         const units = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
         return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
     }
 }
