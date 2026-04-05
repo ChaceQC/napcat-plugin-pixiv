@@ -263,14 +263,14 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
         const args = rawMessage.slice(prefix.length).trim().split(/\s+/);
         const subCommand = args[0]?.toLowerCase() || '';
 
-        // 全局频次限制检查（所有命令共享，群+私聊）
-        if (isRateLimited()) {
-            await sendReply(ctx, event, '⚠️ 请求过于频繁，请稍后再试。');
-            return;
-        }
-
         // 仅处理 p站 命令
         if (subCommand === 'p站') {
+            // 全局频次限制检查（所有命令共享，群+私聊）
+            if (isRateLimited()) {
+                await sendReply(ctx, event, '⚠️ 请求过于频繁，请稍后再试。');
+                return;
+            }
+
             // 群消息检查 CD
             if (messageType === 'group' && groupId) {
                 if (await checkCooldownAndReply(ctx, event, groupId)) return;
