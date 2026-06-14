@@ -2,13 +2,14 @@
  * Pixiv 命令处理器
  *
  * 命令：
- *   #p站         → 随机推荐图片（合并转发）
- *   #p站 关键词  → 搜索并返回图片（合并转发）
+ *   #p站           → 随机推荐图片（合并转发）
+ *   #p站 关键词    → 搜索并返回图片（合并转发）
+ *   #pid 123 456   → 按 PID 获取指定作品（合并转发，支持空格/逗号分隔）
  */
 
 import { OB11Message } from 'napcat-types/napcat-onebot';
 import { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/types';
-import { pixivService, SafeIllust, ExtractResult } from '../services/pixiv.service';
+import { pixivService, SafeIllust, ExtractResult, PidFetchResult } from '../services/pixiv.service';
 import { sendReply, sendForwardMsg, ForwardNode } from './message-handler';
 import { pluginState } from '../core/state';
 import { bannedWordsService } from '../services/banned-words.service';
@@ -36,6 +37,86 @@ export async function handlePixivCommand(
     await handleSearch(ctx, event, keyword);
 }
 
+/** PID 分隔符：空格、英文逗号、中文逗号及其任意组合 */
+const PID_SEPARATOR = /[\s,，]+/;
+
+/** 解析 pid 命令参数，无效输入返回 null */
+function parsePidList(args: string[]): number[] | null {
+    const raw = args.join(' ').trim();
+    if (!raw) return [];
+
+    const tokens = raw.split(PID_SEPARATOR).filter(Boolean);
+    if (tokens.length === 0) return [];
+
+    const ids: number[] = [];
+    const seen = new Set<number>();
+
+    for (const token of tokens) {
+        if (!/^\d+$/.test(token)) return null;
+
+        const pid = Number(token);
+        if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+
+        if (!seen.has(pid)) {
+            seen.add(pid);
+            ids.push(pid);
+        }
+    }
+
+    return ids;
+}
+
+export async function handlePidCommand(
+    ctx: NapCatPluginContext,
+    event: OB11Message,
+    args: string[]
+): Promise<void> {
+    const prefix = pluginState.config.commandPrefix || '#';
+    const usage = `用法: ${prefix}pid 12345678 87654321 或 12345678,87654321`;
+
+    const ids = parsePidList(args);
+    if (ids === null || ids.length === 0) {
+        await sendReply(ctx, event, usage);
+        return;
+    }
+
+    try {
+        await sendReply(ctx, event, `🔢 正在获取 ${ids.length} 个 PID 对应的作品...`);
+        const result = await pixivService.getIllustsByIds(ids);
+        const summaryLines = buildPidSummaryLines(result);
+
+        if (result.illusts.length === 0) {
+            const summary = summaryLines.length > 0 ? `\n${summaryLines.join('\n')}` : '';
+            await sendReply(ctx, event, `未找到可发送的作品。${summary}`);
+            return;
+        }
+
+        const cmdTime = formatDateTime();
+        const senderName = event.sender?.card || event.sender?.nickname || '未知用户';
+        const userId = event.sender?.user_id || event.user_id || '未知QQ号';
+        const nodes = await buildForwardNodes(result.illusts, `🔢 PID 获取 | 来自 ${senderName} (${userId})\n${cmdTime}\n\n`);
+        if (nodes.length === 0) {
+            await sendReply(ctx, event, '图片下载失败，请稍后重试。');
+            return;
+        }
+
+        const isGroup = event.message_type === 'group';
+        const target = isGroup ? event.group_id! : event.user_id;
+        const ok = await sendForwardMsg(ctx, target, isGroup, nodes);
+        if (!ok) {
+            await sendReply(ctx, event, '⚠️ 合并转发消息发送失败，请稍后重试。');
+            return;
+        }
+
+        if (summaryLines.length > 0) {
+            await sendReply(ctx, event, summaryLines.join('\n'));
+        }
+    } catch (error) {
+        pluginState.logger.error('Pixiv PID 获取错误:', error);
+        await sendReply(ctx, event, `PID 获取失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+}
+
 function buildFilterParts(result: Pick<ExtractResult, 'r18Filtered' | 'sensitiveFiltered' | 'bannedFiltered' | 'duplicateFiltered'>): string[] {
     const parts: string[] = [];
     if (result.r18Filtered > 0) parts.push(`R-18: ${result.r18Filtered}`);
@@ -43,6 +124,27 @@ function buildFilterParts(result: Pick<ExtractResult, 'r18Filtered' | 'sensitive
     if (result.bannedFiltered > 0) parts.push(`违禁词: ${result.bannedFiltered}`);
     if (result.duplicateFiltered > 0) parts.push(`近期重复: ${result.duplicateFiltered}`);
     return parts;
+}
+
+function buildPidSummaryLines(result: PidFetchResult): string[] {
+    const lines: string[] = [];
+
+    if (result.truncatedIds.length > 0) {
+        lines.push(`⚠️ 超过上限，已忽略 PID: ${result.truncatedIds.join('、')}`);
+    }
+    if (result.invalidIds.length > 0) {
+        lines.push(`❓ 不存在或无效的 PID: ${result.invalidIds.join('、')}`);
+    }
+    if (result.filteredIds.length > 0) {
+        const filterParts = buildFilterParts(result);
+        const suffix = filterParts.length > 0 ? `（${filterParts.join('、')}）` : '';
+        lines.push(`🚫 因过滤跳过的 PID: ${result.filteredIds.join('、')}${suffix}`);
+    }
+    if (result.failedIds.length > 0) {
+        lines.push(`⚠️ 请求失败的 PID: ${result.failedIds.join('、')}`);
+    }
+
+    return lines;
 }
 
 /**
