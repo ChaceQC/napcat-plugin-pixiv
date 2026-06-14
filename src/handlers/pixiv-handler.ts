@@ -2,8 +2,8 @@
  * Pixiv 命令处理器
  *
  * 命令：
- *   #p站         → 随机推荐 3 张图片（合并转发）
- *   #p站 关键词  → 搜索并返回 3 张图片（合并转发）
+ *   #p站         → 随机推荐图片（合并转发）
+ *   #p站 关键词  → 搜索并返回图片（合并转发）
  */
 
 import { OB11Message } from 'napcat-types/napcat-onebot';
@@ -34,6 +34,15 @@ export async function handlePixivCommand(
 
     const keyword = args.join(' ');
     await handleSearch(ctx, event, keyword);
+}
+
+function buildFilterParts(result: Pick<ExtractResult, 'r18Filtered' | 'sensitiveFiltered' | 'bannedFiltered' | 'duplicateFiltered'>): string[] {
+    const parts: string[] = [];
+    if (result.r18Filtered > 0) parts.push(`R-18: ${result.r18Filtered}`);
+    if (result.sensitiveFiltered > 0) parts.push(`敏感: ${result.sensitiveFiltered}`);
+    if (result.bannedFiltered > 0) parts.push(`违禁词: ${result.bannedFiltered}`);
+    if (result.duplicateFiltered > 0) parts.push(`近期重复: ${result.duplicateFiltered}`);
+    return parts;
 }
 
 /**
@@ -116,11 +125,7 @@ async function handlePixivFetch(
         if (result.illusts.length === 0) {
             const totalFiltered = result.r18Filtered + result.sensitiveFiltered + result.bannedFiltered + result.duplicateFiltered;
             if (totalFiltered > 0) {
-                const parts: string[] = [];
-                if (result.r18Filtered > 0) parts.push(`R-18: ${result.r18Filtered}`);
-                if (result.sensitiveFiltered > 0) parts.push(`敏感: ${result.sensitiveFiltered}`);
-                if (result.bannedFiltered > 0) parts.push(`违禁词: ${result.bannedFiltered}`);
-                if (result.duplicateFiltered > 0) parts.push(`近期重复: ${result.duplicateFiltered}`);
+                const parts = buildFilterParts(result);
                 await sendReply(ctx, event, `🔞 结果均为限制级内容或近期已发送过（已过滤 ${parts.join('、')}），换个时间再试试吧~`);
             } else {
                 await sendReply(ctx, event, '未找到相关内容。');
