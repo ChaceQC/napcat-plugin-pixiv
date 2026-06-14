@@ -165,6 +165,12 @@ export class PixivClient {
         });
     }
 
+    async illustDetail(illustId: number) {
+        return this.fetch('/v1/illust/detail', {
+            params: { illustId }
+        });
+    }
+
     async fetch(url: string, options: any = {}) {
         const maxRetries = 3;
 
