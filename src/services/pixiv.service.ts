@@ -29,6 +29,12 @@ export interface ExtractResult {
     duplicateFiltered: number;
 }
 
+interface FilterIllustOptions {
+    count: number;
+    shuffle?: boolean;
+    skipDuplicateCheck?: boolean;
+}
+
 export class PixivService {
     private client: PixivClient;
     private isLoggedIn: boolean = false;
@@ -112,29 +118,15 @@ export class PixivService {
     }
 
     /**
-     * 从插画列表中提取前 3 个安全作品
-     * 参照 main.py 的 _extract_and_download_top_3 逻辑
+     * 清理近期发送缓存
      */
-    private extractTopSafe(illusts: any[], shuffle: boolean = true): ExtractResult {
-        const count = pluginState.config.resultCount ?? 3;
-        // 打乱列表实现随机效果
-        if (shuffle && illusts.length > 0) {
-            const shuffled = [...illusts];
-            for (let i = shuffled.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-            }
-            illusts = shuffled;
-        }
-
+    private cleanupSentCache(): void {
         const now = Date.now();
-        // 清理过期的缓存
         for (const [id, expireTime] of this.sentCache.entries()) {
             if (now > expireTime) {
                 this.sentCache.delete(id);
             }
         }
-        // 防止 sentCache 无限增长
         if (this.sentCache.size > this.sentCacheMaxSize) {
             const excess = this.sentCache.size - this.sentCacheMaxSize;
             const iter = this.sentCache.keys();
@@ -142,6 +134,48 @@ export class PixivService {
                 this.sentCache.delete(iter.next().value!);
             }
         }
+    }
+
+    /**
+     * 提取单个作品的发送信息
+     */
+    private toSafeIllust(illust: any): SafeIllust | null {
+        let imageUrl: string | undefined;
+        if (illust.metaSinglePage?.originalImageUrl) {
+            imageUrl = illust.metaSinglePage.originalImageUrl;
+        } else {
+            imageUrl = illust.imageUrls?.large || illust.imageUrls?.medium;
+        }
+
+        if (!imageUrl) {
+            return null;
+        }
+
+        return {
+            id: illust.id,
+            title: illust.title,
+            userName: illust.user?.name || '未知',
+            imageUrl,
+        };
+    }
+
+    /**
+     * 从插画列表中筛选可发送作品
+     */
+    private filterIllusts(illusts: any[], options: FilterIllustOptions): ExtractResult {
+        const { count, shuffle = true, skipDuplicateCheck = false } = options;
+        const sourceIllusts = shuffle && illusts.length > 0
+            ? (() => {
+            const shuffled = [...illusts];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+                return shuffled;
+            })()
+            : illusts;
+
+        this.cleanupSentCache();
 
         let r18Filtered = 0;
         let sensitiveFiltered = 0;
@@ -149,11 +183,11 @@ export class PixivService {
         let duplicateFiltered = 0;
         const result: SafeIllust[] = [];
 
-        for (const illust of illusts) {
+        for (const illust of sourceIllusts) {
             if (result.length >= count) break;
 
             // 重复过滤：如果近期已发送过，跳过
-            if (this.sentCache.has(illust.id)) {
+            if (!skipDuplicateCheck && this.sentCache.has(illust.id)) {
                 duplicateFiltered++;
                 pluginState.logger.info(`[过滤] ID: ${illust.id} 包含近期已发送的内容，已跳过`);
                 continue;
@@ -182,25 +216,13 @@ export class PixivService {
                 continue;
             }
 
-            // 提取最高画质图片链接
-            let imageUrl: string;
-            if (illust.metaSinglePage?.originalImageUrl) {
-                imageUrl = illust.metaSinglePage.originalImageUrl;
-            } else {
-                imageUrl = illust.imageUrls?.large || illust.imageUrls?.medium;
-            }
+            const safeIllust = this.toSafeIllust(illust);
+            if (!safeIllust) continue;
 
-            if (!imageUrl) continue;
-
-            result.push({
-                id: illust.id,
-                title: illust.title,
-                userName: illust.user?.name || '未知',
-                imageUrl,
-            });
+            result.push(safeIllust);
         }
 
-        return { illusts: result, totalScanned: illusts.length, r18Filtered, sensitiveFiltered, bannedFiltered, duplicateFiltered };
+        return { illusts: result, totalScanned: sourceIllusts.length, r18Filtered, sensitiveFiltered, bannedFiltered, duplicateFiltered };
     }
 
     /**
@@ -230,7 +252,11 @@ export class PixivService {
             try {
                 const result = await fetcher(attempt);
                 const illusts = result.illusts || [];
-                const currentResult = this.extractTopSafe(illusts, true);
+                const currentResult = this.filterIllusts(illusts, {
+                    count: requiredCount,
+                    shuffle: true,
+                    skipDuplicateCheck: false,
+                });
 
                 // 去重叠加到累积池
                 for (const illust of currentResult.illusts) {
