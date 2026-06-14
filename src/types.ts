@@ -34,6 +34,8 @@ export interface PluginConfig {
     searchSort?: 'date_desc' | 'date_asc' | 'popular_desc';
     /** 每次返回的图片数量，默认 3 */
     resultCount?: number;
+    /** pid 命令最多携带的作品数量，默认 5，最大 10 */
+    pidMaxCount?: number;
     /** 缓存自动清理间隔（分钟），默认 30，0 表示禁用 */
     cacheAutoCleanMinutes?: number;
     /** 代理地址，支持 http/https/socks5，如 http://127.0.0.1:7890，留空不使用代理 */

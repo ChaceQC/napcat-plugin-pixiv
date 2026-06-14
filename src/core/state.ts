@@ -22,6 +22,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
     return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
 /**
  * 配置清洗函数
  * 确保从文件读取的配置符合预期类型，防止运行时错误
@@ -61,6 +65,11 @@ function sanitizeConfig(raw: unknown): PluginConfig {
     if (raw.resultCount !== undefined && raw.resultCount !== null) {
         const n = Number(raw.resultCount);
         if (!isNaN(n) && n > 0 && n <= 10) out.resultCount = n;
+    }
+    // pidMaxCount 校验并钳制
+    if (raw.pidMaxCount !== undefined && raw.pidMaxCount !== null) {
+        const n = Number(raw.pidMaxCount);
+        if (!isNaN(n)) out.pidMaxCount = clampNumber(Math.trunc(n), 1, 10);
     }
     // cacheAutoCleanMinutes 校验
     if (raw.cacheAutoCleanMinutes !== undefined && raw.cacheAutoCleanMinutes !== null) {
