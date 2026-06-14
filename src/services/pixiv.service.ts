@@ -35,6 +35,21 @@ interface FilterIllustOptions {
     skipDuplicateCheck?: boolean;
 }
 
+export interface PidFetchResult extends ExtractResult {
+    /** 用户输入并通过格式校验、去重后的 PID 列表 */
+    requestedIds: number[];
+    /** 实际发起请求的 PID 列表 */
+    processedIds: number[];
+    /** 因超过上限被忽略的 PID */
+    truncatedIds: number[];
+    /** 不存在或无效的 PID */
+    invalidIds: number[];
+    /** 请求失败的 PID */
+    failedIds: number[];
+    /** 因过滤被跳过的 PID */
+    filteredIds: number[];
+}
+
 export class PixivService {
     private client: PixivClient;
     private isLoggedIn: boolean = false;
@@ -306,6 +321,103 @@ export class PixivService {
         }
         this.recordSentCache(finalIllusts);
         return { illusts: finalIllusts, totalScanned, r18Filtered: totalR18Filtered, sensitiveFiltered: totalSensitiveFiltered, bannedFiltered: totalBannedFiltered, duplicateFiltered: totalDuplicateFiltered };
+    }
+
+    /**
+     * 通过 PID 获取作品详情并按输入顺序返回可发送结果
+     */
+    async getIllustsByIds(ids: number[]): Promise<PidFetchResult> {
+        await this.ensureLoggedIn();
+
+        const pidMaxCount = pluginState.config.pidMaxCount ?? 5;
+        const processedIds = ids.slice(0, pidMaxCount);
+        const truncatedIds = ids.slice(pidMaxCount);
+
+        const fetchResults = await Promise.all(processedIds.map(async (id) => {
+            try {
+                const detail = await this.client.illustDetail(id);
+                const illust = detail?.illust;
+
+                if (!illust) {
+                    return { id, status: 'invalid' as const };
+                }
+
+                const filtered = this.filterIllusts([illust], {
+                    count: 1,
+                    shuffle: false,
+                    skipDuplicateCheck: true,
+                });
+
+                if (filtered.illusts.length > 0) {
+                    return { id, status: 'ok' as const, filtered };
+                }
+
+                const totalFiltered = filtered.r18Filtered + filtered.sensitiveFiltered + filtered.bannedFiltered + filtered.duplicateFiltered;
+                if (totalFiltered > 0) {
+                    return { id, status: 'filtered' as const, filtered };
+                }
+
+                return { id, status: 'failed' as const };
+            } catch (error: any) {
+                if (error?.response?.status === 404) {
+                    return { id, status: 'invalid' as const };
+                }
+                pluginState.logger.error(`PID ${id} 获取失败:`, error);
+                return { id, status: 'failed' as const };
+            }
+        }));
+
+        const illusts: SafeIllust[] = [];
+        const invalidIds: number[] = [];
+        const failedIds: number[] = [];
+        const filteredIds: number[] = [];
+        let totalScanned = 0;
+        let r18Filtered = 0;
+        let sensitiveFiltered = 0;
+        let bannedFiltered = 0;
+        let duplicateFiltered = 0;
+
+        for (const item of fetchResults) {
+            if ('filtered' in item && item.filtered) {
+                totalScanned += item.filtered.totalScanned;
+                r18Filtered += item.filtered.r18Filtered;
+                sensitiveFiltered += item.filtered.sensitiveFiltered;
+                bannedFiltered += item.filtered.bannedFiltered;
+                duplicateFiltered += item.filtered.duplicateFiltered;
+            }
+
+            switch (item.status) {
+                case 'ok':
+                    illusts.push(item.filtered.illusts[0]);
+                    break;
+                case 'filtered':
+                    filteredIds.push(item.id);
+                    break;
+                case 'invalid':
+                    invalidIds.push(item.id);
+                    break;
+                case 'failed':
+                    failedIds.push(item.id);
+                    break;
+            }
+        }
+
+        this.recordSentCache(illusts);
+
+        return {
+            requestedIds: ids,
+            processedIds,
+            truncatedIds,
+            invalidIds,
+            failedIds,
+            filteredIds,
+            illusts,
+            totalScanned,
+            r18Filtered,
+            sensitiveFiltered,
+            bannedFiltered,
+            duplicateFiltered,
+        };
     }
 
     /** 记录已发送图片到近期缓存 */
