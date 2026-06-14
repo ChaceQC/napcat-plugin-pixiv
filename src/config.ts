@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
     searchTarget: 'partial_match_for_tags',
     searchSort: 'date_desc',
     resultCount: 3,
+    pidMaxCount: 5,
     cacheAutoCleanMinutes: 30,
     proxyUrl: '',
 };

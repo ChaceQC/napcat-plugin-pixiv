@@ -189,6 +189,7 @@ export default function StatusPage({ status, onRefresh }: StatusPageProps) {
                 <div className="space-y-3">
                     <InfoRow label="命令前缀" value={config.commandPrefix} />
                     <InfoRow label="冷却时间" value={`${config.cooldownSeconds} 秒`} />
+                    <InfoRow label="PID 上限" value={`${config.pidMaxCount ?? 5} 个`} />
                     <InfoRow label="调试模式" value={config.debug ? '开启' : '关闭'} />
                 </div>
             </div>
