@@ -24,6 +24,7 @@ export interface PluginConfig {
     searchTarget?: 'partial_match_for_tags' | 'exact_match_for_tags' | 'title_and_caption'
     searchSort?: 'date_desc' | 'date_asc' | 'popular_desc'
     resultCount?: number
+    pidMaxCount?: number
     cacheAutoCleanMinutes?: number
     proxyUrl?: string
     groupConfigs?: Record<string, GroupConfig>

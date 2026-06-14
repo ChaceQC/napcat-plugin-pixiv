@@ -171,6 +171,13 @@ export default function ConfigPage() {
                         onChange={(v) => updateField('resultCount', Math.max(1, Math.min(10, Number(v) || 3)))}
                     />
                     <InputRow
+                        label="PID 命令最大数量"
+                        desc="`pid` 命令一次最多可携带的 PID 数量，默认 5，最大 10"
+                        value={String(config.pidMaxCount ?? 5)}
+                        type="number"
+                        onChange={(v) => updateField('pidMaxCount', Math.max(1, Math.min(10, Number(v) || 5)))}
+                    />
+                    <InputRow
                         label="每分钟频次上限"
                         desc="所有群共享的全局请求限制，0 表示不限制"
                         value={String(config.rateLimitPerMinute ?? 60)}
