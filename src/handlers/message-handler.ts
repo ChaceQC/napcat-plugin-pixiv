@@ -13,7 +13,7 @@
 import type { OB11Message, OB11PostSendMsg } from 'napcat-types/napcat-onebot';
 import type { NapCatPluginContext } from 'napcat-types/napcat-onebot/network/plugin/types';
 import { pluginState } from '../core/state';
-import { handlePixivCommand } from './pixiv-handler';
+import { handlePixivCommand, handlePidCommand } from './pixiv-handler';
 
 // ==================== 全局频次限制（滑动窗口） ====================
 
@@ -263,8 +263,8 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
         const args = rawMessage.slice(prefix.length).trim().split(/\s+/);
         const subCommand = args[0]?.toLowerCase() || '';
 
-        // 仅处理 p站 命令
-        if (subCommand === 'p站') {
+        // 仅处理 p站 / pid 命令
+        if (subCommand === 'p站' || subCommand === 'pid') {
             // 全局频次限制检查（所有命令共享，群+私聊）
             if (isRateLimited()) {
                 await sendReply(ctx, event, '⚠️ 请求过于频繁，请稍后再试。');
@@ -276,7 +276,11 @@ export async function handleMessage(ctx: NapCatPluginContext, event: OB11Message
                 if (await checkCooldownAndReply(ctx, event, groupId)) return;
             }
 
-            await handlePixivCommand(ctx, event, args.slice(1));
+            if (subCommand === 'p站') {
+                await handlePixivCommand(ctx, event, args.slice(1));
+            } else {
+                await handlePidCommand(ctx, event, args.slice(1));
+            }
             pluginState.incrementProcessed();
         }
     } catch (error) {
